@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hexo, NexT" />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="进程调度: 在合适的时候选择以一定的策略选择一个就绪进程运行 两个可以量化的衡量指标:  周转时间&#x2F;平均周转时间 带权周转时间&#x2F;带权平均周转时间  周转时间: ​    进程提交给计算机到最后完成所花费的时间(t) ​    t &#x3D; tc - ts   ts:进程的提交时间(Start);   tc:进程的完成时间(Complete)      ​    意义: t说明了进程在系统中停留的时间长短">
+<meta property="og:type" content="article">
+<meta property="og:title" content=" process scheduling">
+<meta property="og:url" content="http://yoursite.com/2019/06/01/process-scheduling/index.html">
+<meta property="og:site_name" content="liupf&#39;s blog">
+<meta property="og:description" content="进程调度: 在合适的时候选择以一定的策略选择一个就绪进程运行 两个可以量化的衡量指标:  周转时间&#x2F;平均周转时间 带权周转时间&#x2F;带权平均周转时间  周转时间: ​    进程提交给计算机到最后完成所花费的时间(t) ​    t &#x3D; tc - ts   ts:进程的提交时间(Start);   tc:进程的完成时间(Complete)      ​    意义: t说明了进程在系统中停留的时间长短">
+<meta property="og:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os2.png">
+<meta property="article:published_time" content="2019-06-01T13:38:44.000Z">
+<meta property="article:modified_time" content="2019-06-02T05:19:08.460Z">
+<meta property="article:author" content="liupf">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os2.png">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2019/06/01/process-scheduling/"/>
+
+
+
+
+
+  <title> process scheduling | liupf's blog</title>
+  
+
+
+
+
+
+
+
+
+<meta name="generator" content="Hexo 4.2.1"></head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">liupf's blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/%20" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/%20" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/06/01/process-scheduling/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline"> process scheduling</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-06-01T21:38:44+08:00">
+                2019-06-01
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" itemprop="url" rel="index">
+                    <span itemprop="name">操作系统</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p><strong>进程调度: 在合适的时候选择以一定的策略选择一个就绪进程运行</strong></p>
+<p>两个可以量化的衡量指标:</p>
+<ul>
+<li><strong>周转时间/平均周转时间</strong></li>
+<li><strong>带权周转时间/带权平均周转时间</strong></li>
+</ul>
+<p><strong>周转时间:</strong></p>
+<p>​    进程提交给计算机到最后完成所花费的时间(t)</p>
+<p>​    t = tc - ts   ts:进程的提交时间(Start);   tc:进程的完成时间(Complete)     </p>
+<p>​    <strong>意义: t说明了进程在系统中停留的时间长短</strong></p>
+<p><strong>平均周转时间:</strong></p>
+<p>t = (t1 +  t2 + t3…. + tn) / n</p>
+<p>​    <strong>意义:平均周转时间越短，意味着进程在系统中的停留的时间越短，因而系统的吞吐量就越大，资源利用率就</strong>          <strong>越高</strong></p>
+<p><strong>带权周转时间w:</strong></p>
+<p>​    小的进程所花费的周转时间肯定小，大的进程花费的时间肯定大，所以引入带权周转时间。</p>
+<p>​    <strong>w = t / tr</strong>        t:进程的周转时间;    tr:进程的运行时间</p>
+<p>​    意义:进程在系统中<strong>相对</strong>停留时间</p>
+<p><strong>平均带权周转时间</strong></p>
+<p>​    w = (w1 + w2 + w3 + … + wn) / n</p>
+<hr>
+<h3 id="典型的调度算法"><a href="#典型的调度算法" class="headerlink" title="典型的调度算法"></a>典型的调度算法</h3><h4 id="先来先服务-First-Come-First-Serve"><a href="#先来先服务-First-Come-First-Serve" class="headerlink" title="先来先服务(First Come First Serve)"></a>先来先服务(First Come First Serve)</h4><ul>
+<li><p><strong>算法</strong></p>
+<p>按照作业进入系统的时间先后来挑选作业，<strong>先进入系统的作业优先被运行</strong></p>
+</li>
+<li><p><strong>特点</strong></p>
+<ul>
+<li>容易实现 效率不高</li>
+<li><strong>只考虑了作业的等候时间，没有考虑作业运行时间的长短。</strong>因此一个晚来的但是运行时间很短的作业可能需要等待很长时间才能被运行。<strong>不利于短作业执行。</strong></li>
+</ul>
+</li>
+</ul>
+<h4 id="短作业优先调度算法-Short-Job-First"><a href="#短作业优先调度算法-Short-Job-First" class="headerlink" title="短作业优先调度算法(Short Job First)"></a>短作业优先调度算法(Short Job First)</h4><ul>
+<li><p><strong>算法</strong></p>
+<p>参考运行时间。选取运行时间最短的作业投入运行</p>
+</li>
+<li><p><strong>特点</strong></p>
+<ul>
+<li>容易实现 效率不高</li>
+<li><strong>忽视了作业的等待时间</strong>，一个早来但是很长的作业将会长时间得不到运行，易出现资源饥饿现象。</li>
+</ul>
+</li>
+</ul>
+<h4 id="响应比优先调度算法"><a href="#响应比优先调度算法" class="headerlink" title="响应比优先调度算法"></a>响应比优先调度算法</h4><ul>
+<li><p><strong>响应比定义: ** 作业的</strong>响应时间和<strong>与</strong>运行时间**的比值。</p>
+<p>响应比 = 响应时间 / 运行时间</p>
+<p>​            = (等待时间 + 运行时间) / 运行时间</p>
+<p>​            = 1 + 等待时间 / 运行时间</p>
+</li>
+<li><p><strong>算法</strong></p>
+<p>计算每个作业的响应比，选择<strong>响应比最高</strong>的作业优先投入运行</p>
+</li>
+<li><p><strong>特点(兼顾了长作业和短作业)</strong></p>
+<p><strong>响应比 = 1 + 等待时间 / 运行时间</strong></p>
+<ul>
+<li>如果作业<strong>等待时间</strong>相同，则运行时间越短的作业越先被执行，有利于短作业</li>
+<li>如果作业<strong>运行时间</strong>相同，则等待时间越长的作业越先被执行，等待时间长的作业</li>
+<li>对于一个运行时间长的作业，只要他等待的时间足够长，那么响应比就会增加，可能获取cpu</li>
+</ul>
+</li>
+</ul>
+<h4 id="优先数调度算法"><a href="#优先数调度算法" class="headerlink" title="优先数调度算法"></a>优先数调度算法</h4><ul>
+<li><p><strong>算法</strong></p>
+<ul>
+<li>根据进程优先数，把CPU分配给优先数最大的进程</li>
+<li><strong>优先数 = 静态优先数 + 动态优先数</strong></li>
+</ul>
+</li>
+<li><p><strong>静态优先数</strong></p>
+<p>进程创建时确定，整个进程运行期间不改变</p>
+<ul>
+<li><strong>静态优先数的确定</strong><ul>
+<li><strong>基于进程所需资源的多少</strong></li>
+<li><strong>基于程序运行时间的长短</strong></li>
+<li><strong>进程的类型(IO/CPU,核心/用户,前端/后台)</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>动态优先数</strong></p>
+<p>优先数在进程运行期间可以改变</p>
+<ul>
+<li><p><strong>动态优先数的确定</strong></p>
+<ul>
+<li><p><strong>当使用CPU使用超过一定时长时</strong></p>
+<p>可以适当降低</p>
+</li>
+<li><p><strong>当进行I/O操作后</strong></p>
+</li>
+<li><p><strong>当进程等待超过一定时长时</strong></p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h4 id="循环论转调度算法-ROUND-ROBIN"><a href="#循环论转调度算法-ROUND-ROBIN" class="headerlink" title="循环论转调度算法(ROUND-ROBIN)"></a>循环论转调度算法(ROUND-ROBIN)</h4><ul>
+<li><p><strong>概念</strong></p>
+<ul>
+<li><p>把所有就绪进程<strong>按先进先出的原则排成队列</strong>。新来的进程加到<strong>队列的末尾</strong>。</p>
+</li>
+<li><p><strong>进程以时间片q为单位轮流使用CPU。</strong>刚刚运行完的一个时间片进程排到队列末尾，等候下一轮运行。</p>
+<p>如果当前进程在时间片p内运行完成则撤出队列，否则加入队列末尾。</p>
+</li>
+<li><p>队列逻辑上是环形的。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os2.png" alt=""></p>
+</li>
+</ul>
+</li>
+<li><p><strong>优点</strong></p>
+<ul>
+<li><strong>公平性:</strong> 每个进程有平等的机会获取CPU。</li>
+<li><strong>交互性:</strong> 每个进程等待 (N - 1) * q 的时间就可以重新获得CPU</li>
+</ul>
+</li>
+<li><p>时间片<strong>q</strong>的大小</p>
+<ul>
+<li><p>如果q太大</p>
+<p>则会导致交互性变差，每个进程等待的时间变长，甚至退化成<strong>FCFS</strong>算法</p>
+</li>
+<li><p>如果<strong>q</strong>太小</p>
+<p>则进程切换频繁，系统开销增加</p>
+</li>
+</ul>
+</li>
+<li><p><strong>两种改进方法</strong></p>
+<ul>
+<li><strong>时间片的大小可以改变</strong></li>
+<li><strong>组织多个就绪队列</strong></li>
+</ul>
+</li>
+</ul>
+<h4 id="Linux进程调度"><a href="#Linux进程调度" class="headerlink" title="Linux进程调度"></a>Linux进程调度</h4><ul>
+<li><strong>普通进程</strong><ul>
+<li>采用<strong>动态优先级</strong>调度</li>
+<li>调度程序周期性的修改优先级(<strong>避免饥饿</strong>)</li>
+</ul>
+</li>
+<li><strong>实时进程</strong><ul>
+<li>采用<strong>静态优先级</strong>调度</li>
+<li>由用户预先指定，以后不会改变</li>
+</ul>
+</li>
+</ul>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2019/05/28/process/" rel="next" title="process">
+                <i class="fa fa-chevron-left"></i> process
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/06/03/SpringBoot%E8%87%AA%E5%8A%A8%E9%85%8D%E7%BD%AE%E5%8E%9F%E7%90%86/" rel="prev" title="SpringBoot自动配置原理">
+                SpringBoot自动配置原理 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">liupf</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/%20%7C%7C%20archive">
+              
+                  <span class="site-state-item-count">11</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">4</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#典型的调度算法"><span class="nav-number">1.</span> <span class="nav-text">典型的调度算法</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#先来先服务-First-Come-First-Serve"><span class="nav-number">1.1.</span> <span class="nav-text">先来先服务(First Come First Serve)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#短作业优先调度算法-Short-Job-First"><span class="nav-number">1.2.</span> <span class="nav-text">短作业优先调度算法(Short Job First)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#响应比优先调度算法"><span class="nav-number">1.3.</span> <span class="nav-text">响应比优先调度算法</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#优先数调度算法"><span class="nav-number">1.4.</span> <span class="nav-text">优先数调度算法</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#循环论转调度算法-ROUND-ROBIN"><span class="nav-number">1.5.</span> <span class="nav-text">循环论转调度算法(ROUND-ROBIN)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Linux进程调度"><span class="nav-number">1.6.</span> <span class="nav-text">Linux进程调度</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">liupf</span>
+
+  
+</div>
+
+
+  <div class="powered-by">由 <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a> 强力驱动</div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

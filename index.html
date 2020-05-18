@@ -228,7 +228,7 @@
   
   
   <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/05/17/hello-world/">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/07/31/%E5%B0%8F%E8%AE%B0redis%E5%8A%A8%E6%80%81%E5%AD%97%E7%AC%A6%E4%B8%B2%E7%9A%84%E5%AE%9E%E7%8E%B0/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="name" content="liupf">
@@ -247,7 +247,7 @@
         
           <h1 class="post-title" itemprop="name headline">
                 
-                <a class="post-title-link" href="/2020/05/17/hello-world/" itemprop="url">Hello World</a></h1>
+                <a class="post-title-link" href="/2019/07/31/%E5%B0%8F%E8%AE%B0redis%E5%8A%A8%E6%80%81%E5%AD%97%E7%AC%A6%E4%B8%B2%E7%9A%84%E5%AE%9E%E7%8E%B0/" itemprop="url">小记redis动态字符串的实现</a></h1>
         
 
         <div class="post-meta">
@@ -259,8 +259,8 @@
               
                 <span class="post-meta-item-text">发表于</span>
               
-              <time title="创建于" itemprop="dateCreated datePublished" datetime="2020-05-17T23:27:03+08:00">
-                2020-05-17
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-07-31T11:43:35+08:00">
+                2019-07-31
               </time>
             
 
@@ -299,19 +299,2442 @@
       
         
           
-            <p>Welcome to <a href="https://hexo.io/" target="_blank" rel="noopener">Hexo</a>! This is your very first post. Check <a href="https://hexo.io/docs/" target="_blank" rel="noopener">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a href="https://hexo.io/docs/troubleshooting.html" target="_blank" rel="noopener">troubleshooting</a> or you can ask me on <a href="https://github.com/hexojs/hexo/issues" target="_blank" rel="noopener">GitHub</a>.</p>
-<h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">"My New Post"</span></span><br></pre></td></tr></table></figure>
+            <p>Redis的动态字符串数据结构扩展了C语言的字符串。Redis数据库中,包含字符串值的键值对在底层都是由SDS实现的。除了用作数据库中字符串的键值对外,SDS还被用作<strong>缓冲区:</strong>AOF模块中的<strong>AOF缓冲区</strong>,以及客户端状态中的<strong>输入缓冲区</strong>等。</p>
+<hr>
+<h4 id="一、SDS的定义"><a href="#一、SDS的定义" class="headerlink" title="一、SDS的定义"></a>一、SDS的定义</h4><p>每一个<strong>sds.h/sdshar</strong>结构表示一个SDS值:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">sdshdr</span>&#123;</span></span><br><span class="line">  <span class="comment">//记录buf数组中已使用字节的数量</span></span><br><span class="line">  <span class="comment">//等于SDS所保存字符串的长度</span></span><br><span class="line">  <span class="keyword">int</span> len;</span><br><span class="line">  </span><br><span class="line">  <span class="comment">//记录buf数组中未使用字节的数量</span></span><br><span class="line">  <span class="keyword">int</span> <span class="built_in">free</span>;</span><br><span class="line">  </span><br><span class="line">  <span class="comment">//字节数组, 用于保存字符串</span></span><br><span class="line">  <span class="keyword">char</span>[] buf;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p>More info: <a href="https://hexo.io/docs/writing.html" target="_blank" rel="noopener">Writing</a></p>
-<h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/database/redis0.png" alt=""></p>
+<p>上图是一个SDS示例:</p>
+<ul>
+<li>free属性值为0, 表示这个SDS没有分配任何未使用空间。</li>
+<li>len属性值为5, 表示这个SDS保存了一个五字节长的字符串</li>
+<li>buf属性是一个char类型的数组, 数组的前五个字节分别保存了’R’、’e’、’d’、’i’、’s’五个字符, 最后一个字节则保存了空字符’\0’。</li>
+</ul>
+<h4 id="二、SDS与C字符串的区别"><a href="#二、SDS与C字符串的区别" class="headerlink" title="二、SDS与C字符串的区别"></a>二、SDS与C字符串的区别</h4><h5 id="一、常数复杂度获取字符串长度"><a href="#一、常数复杂度获取字符串长度" class="headerlink" title="一、常数复杂度获取字符串长度"></a>一、常数复杂度获取字符串长度</h5><p>C字符串并不记录自身长度的信息, 所以得到一个C字符串的长度需要遍历一次字符串, 时间复杂度是O(n), 而Redis的SDS数据结构中有len等信息记录了字符串长度, 所以时间复杂度是O(1)。</p>
+<p>设置和更新SDS长度的工作是由SDS的API在执行时自动完成的, 使用SDS无需进行任何手动修改长度的工作。</p>
+<p>通过这一操作, Redis将获取字符串所需的复杂度从O(n)降到了O(1), 确保了获取字符串长度的工作不会成为Redis的性能瓶颈。如对一个非常长的字符串键反复执行<strong><em>STRLEN</em></strong>命令。</p>
+<h5 id="二、杜绝缓冲区溢出"><a href="#二、杜绝缓冲区溢出" class="headerlink" title="二、杜绝缓冲区溢出"></a>二、杜绝缓冲区溢出</h5><p>C字符串因为没有记录自身长度, 所以没有自动扩容机制, 可能会造成缓冲区溢出。例如, 两个C字符串s1(“Redis”)、s2(“MongoDB”)在内存中是相邻的, 假定这时修改s1内容为”Reids Cluster”, 那么多出来的这部分内容就会溢出, 覆盖到s2字符串上, 修改了s2的字符串, 出现缓冲区溢出问题。</p>
+<p>SDS的空间分配策略杜绝了发生缓冲区溢出的可能性: 当SDS API需要对SDS进行修改时, API会先检查SDS的空间是否满足修改所需的要求, 如果不满足的话, SDS会自动扩容, 按照一定的扩容策略。</p>
+<h5 id="三、减少修改字符串时带来的内存重分配次数"><a href="#三、减少修改字符串时带来的内存重分配次数" class="headerlink" title="三、减少修改字符串时带来的内存重分配次数"></a>三、减少修改字符串时带来的内存重分配次数</h5><p>因为SDS在使用的过程中, 会有扩容策略, 这牵扯到内存分配, 如果频繁的执行内存重新分配, 那么就会对系统的整体性能造成影响。</p>
+<p>为了避免这种缺陷, SDS通过未使用空间解除了字符串长度和底层数组长度之间的关联: 在SDS中, buf的长度不一定就是字符数量加一,  数组里可以包含未使用的字节, 即<strong>free</strong>属性的值。</p>
+<p>通过未使用空间, SDS实现了<strong>空间预分配</strong>和<strong>惰性空间释放</strong>两种优化策略。</p>
+<ol>
+<li><p><strong>空间预分配</strong></p>
+<p>空间预分配用于优化SDS字符串的增长操作。</p>
+<p>其额外分配的未使用空间数量由以下公式决定:</p>
+<ul>
+<li>如果对SDS修改后, SDS的长度(即len的属性值)小于<strong>1MB</strong>, 那么程序分配将分配和len属性值大小相同的额外空间, 这时SDSlen属性的值江河将和free属性相同。</li>
+<li>如果对SDS修改后, SDS的长度大于<strong>1MB</strong>, 那么程序将会分配额外1MB的未使用空间。例如, 修改之后SDSlen属性的值将变成30MB, 那么程序分配额外1MB空间, SDS的buf数组实际长度将为<strong>30MB+1MB+1byte</strong>。</li>
+</ul>
+</li>
+<li><p><strong>惰性空间释放</strong></p>
+<p>惰性空间释放用于优化SDS字符串缩短操作: 当SDS的API需要缩短SDS保存的字符串时, 程序并不立即使用内存重分配来回收缩短后多出来的字节, 而是使用free属性将这些字节的数量记录下来, 相当于额外的空闲空间, 留待将来使用。</p>
+<p>与此同时, SDS也提供了相应的API, 让我们可以在有需要的时候, 真正的释放SDS未使用的空间。</p>
+</li>
+</ol>
+<h5 id="四、二进制安全"><a href="#四、二进制安全" class="headerlink" title="四、二进制安全"></a>四、二进制安全</h5><p><strong>C字符串的限制:</strong></p>
+<p>C字符串中的字符必须包含某种编码(比如ASCII), 并且除了字符串末尾之外, 字符串里面不能包含<strong>空字符</strong>, 否则最先被程序读入的空字符将被误认为字符串的结尾, 这些限制使得C字符串只能保存文本数据, 而不能保存图片、音频、视频、压缩文件这样的二进制数据。</p>
+<p>而SDS的API都会以处理二进制的方式来处理SDS存放在buf数组里的数据, 程序不会对其中的数据做任何的限制、过滤或者假设。这也是将buf属性称之为<strong>字节数组</strong>的原因——Redis不是用这个数组来保存字符, 而是<strong>用它来保存一系列二进制数据</strong>。</p>
+<p>例如有一种使用空字符来分割多个单词的特殊格式, 如下:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/database/redis1.png" alt=""></p>
+<p>C字符串是不能保存的, 因为当C程序读到中间的’\0’时, 就会判断读取结束, 导致后面单词不能被正确读出。而SDS则没有这个问题, 因为SDS使用<strong>len</strong>来记录字符串的长度。</p>
+<h5 id="五、兼容部分C字符串函数"><a href="#五、兼容部分C字符串函数" class="headerlink" title="五、兼容部分C字符串函数"></a>五、兼容部分C字符串函数</h5><p>SDS字符串一样遵循C字符串以空字符结尾的惯例, 这样就可以重用一部分&lt;string.h&gt;库定义的函数, 避免了重复代码。</p>
+<h4 id="三"><a href="#三" class="headerlink" title="三"></a>三</h4><p>以上内容总结自《Redis设计与实现》。</p>
 
-<p>More info: <a href="https://hexo.io/docs/server.html" target="_blank" rel="noopener">Server</a></p>
-<h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure>
+          
+        
+      
+    </div>
+    
+    
+    
 
-<p>More info: <a href="https://hexo.io/docs/generating.html" target="_blank" rel="noopener">Generating</a></p>
-<h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure>
+    
 
-<p>More info: <a href="https://hexo.io/docs/one-command-deployment.html" target="_blank" rel="noopener">Deployment</a></p>
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/06/12/%E5%AD%98%E5%82%A8%E7%AE%A1%E7%90%86/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/06/12/%E5%AD%98%E5%82%A8%E7%AE%A1%E7%90%86/" itemprop="url">存储管理</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-06-12T16:27:49+08:00">
+                2019-06-12
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <h3 id="内存管理功能"><a href="#内存管理功能" class="headerlink" title="内存管理功能"></a>内存管理功能</h3><h4 id="存储管理的功能"><a href="#存储管理的功能" class="headerlink" title="存储管理的功能"></a>存储管理的功能</h4><ul>
+<li><p><strong>1)、地址映射</strong></p>
+<ul>
+<li><p>将程序中的地址(<strong>虚拟地址、虚地址、逻辑地址</strong>)变化成内存中的真实地址(<strong>CPU能够直接访问的实地址、物理地址</strong>)的过程。</p>
+</li>
+<li><p>方式:</p>
+<ol>
+<li><p><strong>固定地址映射</strong></p>
+<p>在编程或者编译时确定逻辑地址和物理地址映射关系。也就是在程序的<strong>源代码里面直接指明物理地址</strong>或者在编译的时候<strong>由编译器帮我们转化成物理地址</strong></p>
+<ul>
+<li><p>特点</p>
+<ul>
+<li><p><strong>程序加载时必须放在指定的内存区域</strong></p>
+<p>因为物理地址是指定的，所以程序必须放在指定的内存区域</p>
+</li>
+<li><p><strong>容易产生地址冲突,运行失败</strong></p>
+<p>如果多个程序的程序地址是同一个，那么在转换成物理地址时就会产生冲突</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>静态地址映射</strong></p>
+<p>程序<strong>装入(例如双击程序图标)</strong>时由<strong>操作系统</strong>完成逻辑地址到物理地址的映射。</p>
+<p>包含以下概念:</p>
+<ul>
+<li><p><strong>逻辑地址: VA(Virtual Addr.)</strong></p>
+</li>
+<li><p><strong>装入基址: BA(Base Addr.)</strong></p>
+<p>指的是程序装在内存里面的起始地址</p>
+</li>
+<li><p><strong>物理地址: MA(Memory Addr.)</strong></p>
+<p>MA = BA  + VA</p>
+</li>
+</ul>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os3.png" alt=""></p>
+<p>如上图有一个程序, 这个程序有一个虚拟地址x, x存储的内容是1234, (x)去获取这个地址。<strong>虚拟地址从0开始往上增加，这个地址属于线形地址空间。</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os4.png" alt=""></p>
+<p><strong>程序被装入内存后，如上图所示: 有一个真实的x号地址单元，这是未知的并不是我们想找的,有一个基址，基址往上才是真实的要找的x号单元MA内容(1234)</strong></p>
+<ul>
+<li><strong>特点</strong><ul>
+<li>程序运行之前确定映射关系</li>
+<li>程序装入后不能移动，如果移动必须放回原来的位置</li>
+<li><strong>程序占用连续的内存空间</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>动态地址映射</strong></p>
+<p>在程序的运行过程中把逻辑地址转换为物理地址。例如:</p>
+<p>MOV AX, [500] ; 在程序访问到500号地址时才讲逻辑地址映射到物理地址。</p>
+<p>映射过程和静态地址映射的过程相同。都是<strong>MA = BA + VA</strong>，如果程序有移动，那么<strong>BA可能会改变</strong>，操作系统将<strong>自动计算新的MA。</strong></p>
+<ul>
+<li><p><strong>特点</strong></p>
+<ul>
+<li>程序占用的内存空间可以动态变化，<strong>要求及时更新新的BA</strong></li>
+<li>程序不占用连续的内存地址空间，可以分成几段，但是<strong>每段的基址BA系统应该知道。</strong></li>
+<li>便于多个进程共享代码，共享的代码作为独立的一段存放</li>
+<li><strong>段式系统、页式系统基本都是采用的动态地址映射方式</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><p><strong>2)、虚拟存储</strong></p>
+<ul>
+<li><p><strong>解决的问题:</strong></p>
+<ul>
+<li>程序过大或者过多时内存不够，程序不能运行</li>
+<li>多个程序并发运行时容易产生地址冲突，不能运行</li>
+</ul>
+</li>
+<li><p><strong>概念</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os5.png" alt=""></p>
+<ul>
+<li>他是<strong>线性</strong>的地址空间，从0开始增加到最大</li>
+<li>在32位的里它的容量是<strong>$2^{32}$Byte = 4GB</strong></li>
+<li><strong>每一个进程都是一个封闭的空间，都有一套自己的地址，互不冲突，并且和物理地址分离</strong></li>
+<li><strong>程序员在编程时就是使用这种线性的虚拟地址</strong>    </li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>3)、内存保护</strong></p>
+</li>
+<li><p><strong>4)、存储保护</strong></p>
+</li>
+</ul>
+<h4 id="物理内存管理"><a href="#物理内存管理" class="headerlink" title="物理内存管理"></a>物理内存管理</h4><h5 id="一、分区内存管理"><a href="#一、分区内存管理" class="headerlink" title="一、分区内存管理"></a>一、分区内存管理</h5><p>把物理内存分成若干个区域来分配给用户使用。根据分区的形式和分区的时机可以分成以下分区方式:</p>
+<ul>
+<li><p><strong>单一区存储管理(不分区)</strong></p>
+<p>用户区不分区，完全被一个程序使用。例如DOS</p>
+</li>
+<li><p><strong>分区存储管理</strong></p>
+<p>把用户内存划分成若干个大小不等的分区共不同的程序使用</p>
+<ul>
+<li><p><strong>固态分区</strong></p>
+<p>把内存<strong>固定地</strong>划分为若干个大小不等的分区供各个程序使用。每个分区的大小和位置都固定，系统运行期间不再重新划分。</p>
+<p><strong>操作系统会生成一个分区表，用来记录分区的大小、位置和使用标志。</strong></p>
+<p>固定分区的例子:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os6.png" alt=""></p>
+</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><p><strong>动态分区</strong></p>
+<p><strong>在程序装入时创建分区</strong>，使分区的大小刚好与程序的大小相匹配</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os7.png" alt=""></p>
+<p><strong>程序动态的分配到内存中，当执行完后，撤出内存。这样导致了内存碎片化的问题，后来的程序不能充分利用碎片内存空间。</strong></p>
+<ul>
+<li><strong>动态分区在实际应用中要解决的问题</strong><ol>
+<li>分区的分配</li>
+<li>分区的选择</li>
+<li>分区的回收</li>
+<li><strong>解决内存碎片化问题</strong></li>
+</ol>
+</li>
+</ul>
+</li>
+</ul>
+<h5 id="二、分区的放置策略"><a href="#二、分区的放置策略" class="headerlink" title="二、分区的放置策略"></a>二、分区的放置策略</h5><ul>
+<li><p><strong>空闲分区表</strong></p>
+<p>在内存分配之前，需要一个<strong>空闲分区表</strong>来记录内存空闲区的位置大小。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os8.png" alt=""></p>
+</li>
+<li><p><strong>分配过程(假定用户要求的空闲区大小为s)</strong></p>
+<ul>
+<li>1)、从空闲区表的第一个分区开始遍历寻找大于等于s的分区</li>
+<li>2)、找到分区后从分区中分割出大小为s的部分给用户使用</li>
+<li>3)、分割后的剩余部分仍然登记在空闲区表中</li>
+<li><strong>注意:</strong> 空闲区的分割一般是从底部开始分割，这样做的目的是空闲分区在分区表中的位置不变起始地址不变。只改变大小，方便更新空闲区表。</li>
+</ul>
+</li>
+<li><p><strong>空闲区表如何排序</strong></p>
+<p>空闲区表的排序不同用户最终选择到的空闲区就不同，这就是分区的<strong>放置策略</strong>。</p>
+</li>
+<li><p><strong>放置策略</strong></p>
+<ul>
+<li><strong>按空闲区位置(首地址)递增排序 (首次适应法)</strong></li>
+<li><strong>按空闲区位置(首地址)递减排序 (实际上不用这种方式)</strong></li>
+<li><strong>按空闲区大小递增排序(最佳适应法)</strong></li>
+<li><strong>按空闲区大小递减排序(最坏适应法)</strong></li>
+</ul>
+</li>
+</ul>
+<h5 id="三、内存覆盖技术"><a href="#三、内存覆盖技术" class="headerlink" title="三、内存覆盖技术"></a>三、内存覆盖技术</h5><ul>
+<li><p><strong>目的</strong></p>
+<p>在较小的内存空间中使用较大的程序</p>
+</li>
+<li><p><strong>内存分区</strong></p>
+<ul>
+<li><p><strong>常驻区</strong></p>
+<p>被某段程序单独固定的占用，可以划分多个</p>
+</li>
+<li><p><strong>覆盖区</strong></p>
+<p>能被多段共用可以划分多个</p>
+</li>
+</ul>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os9.png" alt=""></p>
+<p>如上图内存110K，程序190K，应用层是用户可以直接调用的，D、E模块会调用到B模块，B模块会用到A模块</p>
+<p>A模块是核心层。这样，可以把A模块放进常驻区，当用户调用D或者E模块时就把D或者E放入覆盖区，B也放入覆盖区，当用户调用F时，就把F和C放入覆盖区。</p>
+<p><strong>前提:</strong> 模块的划分大小要保证放入模块的程序够用。</p>
+</li>
+<li><p><strong>缺点</strong></p>
+<p>模块的划分和程序逻辑要求很高，执行速度变慢</p>
+</li>
+</ul>
+<h5 id="四、内存交换技术"><a href="#四、内存交换技术" class="headerlink" title="四、内存交换技术"></a>四、内存交换技术</h5><ul>
+<li><p><strong>原理</strong></p>
+<p>内存不够时将进程写到磁盘(<strong>换出/Swap Out</strong>)，当进程要运行时重新写回到内存(<strong>换入/Swap In</strong>)</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os10.png" alt=""></p>
+</li>
+<li><p><strong>优点</strong></p>
+<p>增加进程并发数，不需要考虑程序的模块结构</p>
+</li>
+<li><p>缺点</p>
+<p>I/O频繁，以进程为单位操作太大，增加资源开销</p>
+</li>
+<li><p><strong>换入换出后的地址重定位问题</strong></p>
+</li>
+</ul>
+<h5 id="五、内存碎片"><a href="#五、内存碎片" class="headerlink" title="五、内存碎片"></a>五、内存碎片</h5><p><u>动态分区容易产生碎片问题</u>。<strong>最佳适应法</strong>的内存分配策略最容易产生碎片。</p>
+<ul>
+<li><p><strong>解决碎片的办法一</strong></p>
+<p>规定门限制，分割空闲区时，若剩余的空闲区小于门线值则把剩余的分区也分配给用户。</p>
+</li>
+<li><p><strong>解决碎片的办法二: 内存拼接技术</strong></p>
+<p>将所有的空闲区拼接成一个大的分区。</p>
+<p><strong>拼接的时机:</strong></p>
+<ul>
+<li>释放区回收的时候。问题: 拼接频率过大，系统开销大。</li>
+<li>系统找不到足够大的空闲区时。问题: 空闲区的管理复杂。</li>
+<li>定期拼接。问题: 空闲区的管理复杂。</li>
+</ul>
+</li>
+<li><p><strong>解决碎片的办法三: 让程序可以运行在不连续的内存空间</strong></p>
+<p>如果解决了这个限制，那么就相当于不存在碎片这一概念，碎片问题也就不存在了。</p>
+<p><strong>页式存储管理</strong>和<strong>段式存储管理</strong>一定程度上应用了这种思想。</p>
+</li>
+</ul>
+<h4 id="虚拟内存管理"><a href="#虚拟内存管理" class="headerlink" title="虚拟内存管理"></a>虚拟内存管理</h4><h5 id="一、页式虚拟内存管理的概念"><a href="#一、页式虚拟内存管理的概念" class="headerlink" title="一、页式虚拟内存管理的概念"></a>一、页式虚拟内存管理的概念</h5><ul>
+<li><p><strong>虚拟内存管理的目标</strong></p>
+<ul>
+<li>使得大程序能在较小的内存中运行</li>
+<li>使得多个程序能在较小的内存中运行</li>
+<li>使得多个程序并发运行时地址不冲突</li>
+<li>使得内存利用率提高: 无碎片，共享方便</li>
+</ul>
+</li>
+<li><p><strong>虚拟内存的实现思路</strong></p>
+<p>在程序运行时，只把当前必要的很小一部分代码放入内存中。其余的代码需要时再装入，已经装入的代码不需要时再及时删除。</p>
+</li>
+<li><p><strong>程序运行的局部性</strong></p>
+<p>程序在一个有限的时间段内，访问的代码和数据往往集中在有限的范围内。</p>
+<p>把程序一部分装入内存在较大概率上也足够让其运行一小段时间</p>
+</li>
+<li><p><strong>典型虚拟内存管理方式</strong></p>
+<ul>
+<li><strong>页式</strong>虚拟存储管理</li>
+<li><strong>段式</strong>虚拟存储管理</li>
+<li><strong>段页式</strong>虚拟存储管理</li>
+</ul>
+</li>
+<li><p><strong>页式虚拟内存管理的概念: 把*<u>进程空间</u>* 和 *<u>内存空间</u>*划分成等大小的小片</strong></p>
+<ul>
+<li><p>小片的典型大小: 1K、2K或4K</p>
+</li>
+<li><p><strong>进程的小片: 页、虚拟页或页面</strong></p>
+</li>
+<li><p><strong>内存的小片: 页框、物理页</strong></p>
+</li>
+</ul>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os11.png" alt=""></p>
+<p>内存以<strong>页框</strong>为单位分配使用，进程以页为单位装入内存。因为页在内存中占用的页框不必相邻，所以就<strong>解决了动态分区产生碎片的问题</strong>。</p>
+<p><strong>Windows系统中任务管理器中的页面错误选项指的就是进程中的页面。</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os12.png" alt=""></p>
+</li>
+</ul>
+<h5 id="二、页表和页式地址的映射"><a href="#二、页表和页式地址的映射" class="headerlink" title="二、页表和页式地址的映射"></a>二、页表和页式地址的映射</h5><ul>
+<li><p><strong>页式系统中的地址</strong></p>
+<p>虚拟地址(VA)可以分解成页号P和页内偏移W</p>
+<ul>
+<li><p><strong>页号(P)</strong></p>
+<p><strong>VA所处页的编号 = VA / 页的大小</strong></p>
+</li>
+<li><p><strong>页内偏移(W)</strong></p>
+<p><strong>VA在所处页中的偏移 = VA % 页的大小</strong></p>
+</li>
+<li><p>🌰</p>
+<p>VA = 2500; 页面大小1k($10^{12}$); P = 2500 / 1024 = 2; W = 2500 % 1024 = 452;</p>
+</li>
+</ul>
+</li>
+<li><p><strong>页面映射表</strong></p>
+<p><strong>记录页与页框之间的对应关系</strong>。也叫<strong>页表</strong>。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os13.png" alt=""></p>
+<ul>
+<li><p><strong>页号</strong></p>
+<p>登记程序地址的页号</p>
+</li>
+<li><p><strong>页框号</strong></p>
+<p>登记页所在的物理页号</p>
+</li>
+<li><p>页面其他特性</p>
+<p>登记含<strong>存取权限</strong>在内的其他特性</p>
+</li>
+<li><p>例子</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os14.png" alt=""></p>
+<p>内存中的页框号对应程序中的页号</p>
+</li>
+</ul>
+</li>
+<li><p><strong>页式地址映射的过程</strong></p>
+<ol>
+<li><p>从<strong>VA</strong>中分离<strong>页号P</strong>和<strong>页偏移W</strong>;</p>
+</li>
+<li><p><strong>查页表:</strong> 以<strong>P</strong>为索引查<strong>页框号P’;</strong></p>
+</li>
+<li><p>计算<strong>物理地址MA;</strong></p>
+<p><strong>MA = P’ * 页大小 + W</strong></p>
+</li>
+<li><p><strong>例子</strong></p>
+<p><strong>MOV R1, [2500]</strong> 计算物理地址映射过程</p>
+<ul>
+<li><p>分离<strong>页号P</strong>和<strong>页偏移W</strong></p>
+<p>P = 2500 / 1024 = 2; W = 2500 % 1024 = 452;</p>
+</li>
+<li><p><strong>查找页表</strong></p>
+<p>假定页号2对应的页框号是7，那么 MA = 7 * 1024 + 452 = 7620;</p>
+</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h5 id="三、快表技术和页面共享技术"><a href="#三、快表技术和页面共享技术" class="headerlink" title="三、快表技术和页面共享技术"></a>三、快表技术和页面共享技术</h5><ul>
+<li><p><strong>快表概念</strong></p>
+<p>慢表: 页表放在内存中;  快表: 页表放在Cache中</p>
+<p>地址映射时先访问快表，若没有再访问慢表，同时更新Cache。</p>
+</li>
+<li><p><strong>页面共享原理</strong></p>
+<p>在不同进程的页表中<strong>填上相同的页框号</strong>，多个进程能访问相同的内存空间从而实现页面共享。</p>
+<p>共享页面在内存中只有一份存储，节省内存。</p>
+</li>
+</ul>
+<h5 id="四、缺页中断"><a href="#四、缺页中断" class="headerlink" title="四、缺页中断"></a>四、缺页中断</h5><p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os15.png" alt=""></p>
+<ul>
+<li><p><strong>页表扩充-带中断位的页表</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os16.png" alt=""></p>
+<p><strong>中断位I</strong>—&gt;1:表示页面不在内存里; 0: 表示页面在内存里</p>
+</li>
+<li><p><strong>页表扩充-带访问位和修改位的页表</strong>、</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os17.png" alt=""></p>
+<ul>
+<li><p>访问位-<strong>标识该页最近是否被访问</strong>:</p>
+<p>0:最近没有被访问; 1:最近被访问</p>
+</li>
+<li><p>修改位-<strong>标识该页数据最近是否被修改</strong>: </p>
+<p>0: 未被修改; 1: 被修改</p>
+</li>
+</ul>
+</li>
+<li><p><strong>缺页中断程序</strong></p>
+<p>中断处理程序把所缺的页<strong>从页表指出的辅存地址调入内存</strong>的某个页框中，并<strong>更新</strong>页表中该页对应的<strong>页框号</strong>，并将<strong>中断位I修改为0</strong>。</p>
+</li>
+</ul>
+<h5 id="五、页面淘汰策略"><a href="#五、页面淘汰策略" class="headerlink" title="五、页面淘汰策略"></a>五、页面淘汰策略</h5><ul>
+<li><p><strong>页面抖动</strong></p>
+<p>页面在内存和辅存中频繁交换。页面抖动会导致系统效率下降。</p>
+</li>
+</ul>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/06/03/SpringBoot%E8%87%AA%E5%8A%A8%E9%85%8D%E7%BD%AE%E5%8E%9F%E7%90%86/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/06/03/SpringBoot%E8%87%AA%E5%8A%A8%E9%85%8D%E7%BD%AE%E5%8E%9F%E7%90%86/" itemprop="url">SpringBoot自动配置原理</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-06-03T16:32:35+08:00">
+                2019-06-03
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Spring/" itemprop="url" rel="index">
+                    <span itemprop="name">Spring</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <p><strong>自动配置原理</strong></p>
+<ol>
+<li><p>在SpringBoot启动类中有<strong>@SpringBootApplication</strong>注解。进入该注解看到该类上有<strong>@EnableAutoConfiguration</strong>注解，这个注解就是SpringBoot自动配置的入口。</p>
+</li>
+<li><p><strong>@EnableAutoConfiguration</strong>利用选择器<strong>@AutoConfigurationImportSelector.class</strong>给容器导入一些组件</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Target</span>(&#123;ElementType.TYPE&#125;)</span><br><span class="line"><span class="meta">@Retention</span>(RetentionPolicy.RUNTIME)</span><br><span class="line"><span class="meta">@Documented</span></span><br><span class="line"><span class="meta">@Inherited</span></span><br><span class="line"><span class="meta">@AutoConfigurationPackage</span></span><br><span class="line"><span class="comment">//从这里导入一些组件</span></span><br><span class="line"><span class="meta">@Import</span>(&#123;AutoConfigurationImportSelector<span class="class">.<span class="keyword">class</span>&#125;)</span></span><br><span class="line"><span class="class"><span class="title">public</span> @<span class="title">interface</span> <span class="title">EnableAutoConfiguration</span> </span>&#123;</span><br><span class="line">    String ENABLED_OVERRIDE_PROPERTY = <span class="string">"spring.boot.enableautoconfiguration"</span>;</span><br><span class="line"></span><br><span class="line">    Class&lt;?&gt;[] exclude() <span class="keyword">default</span> &#123;&#125;;</span><br><span class="line"></span><br><span class="line">    String[] excludeName() <span class="keyword">default</span> &#123;&#125;;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>然后进入<strong>AutoConfigurationImportSelector</strong>类，其中有一个<strong>selectImports(AnnotationMetadata annotationMetadata)</strong>方法，该方法内<strong>this.getAutoConfigurationEntry(autoConfigurationMetadata, annotationMetadata);</strong>方法最终会调用到以下方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">protected</span> AutoConfigurationImportSelector.<span class="function">AutoConfigurationEntry <span class="title">getAutoConfigurationEntry</span><span class="params">(AutoConfigurationMetadata autoConfigurationMetadata, AnnotationMetadata annotationMetadata)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (!<span class="keyword">this</span>.isEnabled(annotationMetadata)) &#123;</span><br><span class="line">        <span class="keyword">return</span> EMPTY_ENTRY;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        AnnotationAttributes attributes = <span class="keyword">this</span>.getAttributes(annotationMetadata);</span><br><span class="line">      <span class="comment">//获取候选的配置</span></span><br><span class="line">        List&lt;String&gt; configurations = <span class="keyword">this</span>.getCandidateConfigurations(annotationMetadata, attributes);</span><br><span class="line">        configurations = <span class="keyword">this</span>.removeDuplicates(configurations);</span><br><span class="line">        Set&lt;String&gt; exclusions = <span class="keyword">this</span>.getExclusions(annotationMetadata, attributes);</span><br><span class="line">        <span class="keyword">this</span>.checkExcludedClasses(configurations, exclusions);</span><br><span class="line">        configurations.removeAll(exclusions);</span><br><span class="line">        configurations = <span class="keyword">this</span>.filter(configurations, autoConfigurationMetadata);</span><br><span class="line">        <span class="keyword">this</span>.fireAutoConfigurationImportEvents(configurations, exclusions);</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> AutoConfigurationImportSelector.AutoConfigurationEntry(configurations, exclusions);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中<strong>List<String> configurations = this.getCandidateConfigurations(annotationMetadata, attributes);</strong>是获取候选的配置。</p>
+<ul>
+<li><p>进入<strong>getCandidateConfigurations(annotationMetadata, attributes)</strong>方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">protected</span> List&lt;String&gt; <span class="title">getCandidateConfigurations</span><span class="params">(AnnotationMetadata metadata, AnnotationAttributes attributes)</span> </span>&#123;</span><br><span class="line">    List&lt;String&gt; configurations = SpringFactoriesLoader.loadFactoryNames(<span class="keyword">this</span>.getSpringFactoriesLoaderFactoryClass(), <span class="keyword">this</span>.getBeanClassLoader());</span><br><span class="line">    Assert.notEmpty(configurations, <span class="string">"No auto configuration classes found in META-INF/spring.factories. If you are using a custom packaging, make sure that file is correct."</span>);</span><br><span class="line">    <span class="keyword">return</span> configurations;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>从这行代码<strong><code>List&lt;String&gt; configurations = SpringFactoriesLoader.loadFactoryNames(this.getSpringFactoriesLoaderFactoryClass(), this.getBeanClassLoader());</code></strong>进入，它会从类路径下得到一个资源: 然后扫描类路径下这两个配置文件</p>
+<p><strong>“META-INF/spring.factories” “META-INF/spring.factories”</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//从类路径得到两个配置文件  之后扫描其中的内容</span></span><br><span class="line">Enumeration&lt;URL&gt; urls = classLoader != <span class="keyword">null</span> ? classLoader.getResources(<span class="string">"META-INF/spring.factories"</span>) : ClassLoader.getSystemResources(<span class="string">"META-INF/spring.factories"</span>);</span><br><span class="line"></span><br><span class="line">LinkedMultiValueMap result = <span class="keyword">new</span> LinkedMultiValueMap();</span><br><span class="line"></span><br><span class="line">                <span class="keyword">while</span>(urls.hasMoreElements()) &#123;</span><br><span class="line">                    URL url = (URL)urls.nextElement();</span><br><span class="line">                    UrlResource resource = <span class="keyword">new</span> UrlResource(url);</span><br><span class="line">                  <span class="comment">//把扫描到的内容封装到Properties对象</span></span><br><span class="line">                    Properties properties = PropertiesLoaderUtils.loadProperties(resource);</span><br><span class="line">                    Iterator var6 = properties.entrySet().iterator();</span><br><span class="line"></span><br><span class="line">                    <span class="keyword">while</span>(var6.hasNext()) &#123;</span><br><span class="line">                        Entry&lt;?, ?&gt; entry = (Entry)var6.next();</span><br><span class="line">                        String factoryClassName = ((String)entry.getKey()).trim();</span><br><span class="line">                        String[] var9 = StringUtils.commaDelimitedListToStringArray((String)entry.getValue());</span><br><span class="line">                        <span class="keyword">int</span> var10 = var9.length;</span><br><span class="line"></span><br><span class="line">                        <span class="keyword">for</span>(<span class="keyword">int</span> var11 = <span class="number">0</span>; var11 &lt; var10; ++var11) &#123;</span><br><span class="line">                            String factoryName = var9[var11];</span><br><span class="line">                            result.add(factoryClassName, factoryName.trim());</span><br><span class="line">                        &#125;</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line"><span class="keyword">return</span> result;</span><br></pre></td></tr></table></figure>
+
+<p>最后把这个配置文件中扫描到的内容封装到一个<strong><code>Properties</code></strong>对象中</p>
+<p>配置文件中所有的<strong>EnableAutoConfiguration</strong>值被加入到容器中，这些以<strong>AutoConfiguration</strong>结尾的就是要加入到容器的组件，从而实现自动配置</p>
+<figure class="highlight properties"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Auto Configure</span></span><br><span class="line"><span class="meta">org.springframework.boot.autoconfigure.EnableAutoConfiguration</span>=<span class="string">\</span></span><br><span class="line">org.springframework.boot.autoconfigure.admin.SpringApplicationAdminJmxAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.aop.AopAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.cache.CacheAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.cassandra.CassandraAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.cloud.CloudServiceConnectorsAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.couchbase.CouchbaseAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.dao.PersistenceExceptionTranslationAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.cassandra.CassandraDataAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.cassandra.CassandraReactiveDataAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.cassandra.CassandraReactiveRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.cassandra.CassandraRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.couchbase.CouchbaseDataAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.couchbase.CouchbaseReactiveDataAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.couchbase.CouchbaseReactiveRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.couchbase.CouchbaseRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchDataAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.ldap.LdapRepositoriesAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration,\</span><br><span class="line">org.springframework.boot.autoconfigure.data.mongo.MongoReactiveDataAutoConfiguration,\</span><br><span class="line"><span class="attr">org.springframework.boot.autoconfigure.data.mongo.MongoReactiveRepositoriesAuto</span></span><br></pre></td></tr></table></figure>
+</li>
+</ul>
+</li>
+<li><p>每一个自动配置类进行自动配置功能</p>
+<ul>
+<li><p>以<strong>HttpEncodingAutoConfiguration</strong>解释自动配置原理</p>
+<p>在<strong>@EnableConfigurationProperties({HttpProperties.class})</strong>注解中进入<strong>HttpProperties</strong>类中</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//表示这是一个配置类</span></span><br><span class="line"><span class="meta">@Configuration</span></span><br><span class="line"><span class="comment">//启动指定类的ConfigurationProperties功能</span></span><br><span class="line"><span class="meta">@EnableConfigurationProperties</span>(&#123;HttpProperties<span class="class">.<span class="keyword">class</span>&#125;)</span></span><br><span class="line"><span class="class">/*@<span class="title">Conditional</span>是<span class="title">Spring</span>底层注解，它的作用是根据不同的条件，如果指定的条件满足则整个配置类里的配置就会生效*/</span></span><br><span class="line"><span class="class">//这个<span class="title">Conditional</span>注解的作用就是判断这个类是不是<span class="title">Web</span>类</span></span><br><span class="line"><span class="class">@<span class="title">ConditionalOnWebApplication</span>(</span></span><br><span class="line"><span class="class">    <span class="title">type</span> </span>= Type.SERVLET</span><br><span class="line">)</span><br><span class="line"><span class="comment">//判断当前项目有没有这个类  Filter是SpringMvc解决乱码的过滤器</span></span><br><span class="line"><span class="meta">@ConditionalOnClass</span>(&#123;CharacterEncodingFilter<span class="class">.<span class="keyword">class</span>&#125;)</span></span><br><span class="line"><span class="class">//判断配置文件中是否存在某个配置 <span class="title">spring</span>.<span class="title">http</span>.<span class="title">encoding</span>.<span class="title">enabled</span></span></span><br><span class="line"><span class="class">//<span class="title">matchIfMissing</span> </span>= <span class="keyword">true</span> 表示不配置也可以 默认是<span class="keyword">true</span></span><br><span class="line"><span class="meta">@ConditionalOnProperty</span>(</span><br><span class="line">    prefix = <span class="string">"spring.http.encoding"</span>,</span><br><span class="line">    value = &#123;<span class="string">"enabled"</span>&#125;,</span><br><span class="line">    matchIfMissing = <span class="keyword">true</span></span><br><span class="line">)</span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">HttpEncodingAutoConfiguration</span> </span>&#123;</span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">final</span> Encoding properties;</span><br><span class="line">  <span class="comment">//只有一个有参构造器，那么参数的值就会从ioc容器中获取  而这行代码实际上就是		 @EnableConfigurationProperties(&#123;HttpProperties.class&#125;)生效后产生</span></span><br><span class="line">  <span class="meta">@Bean</span></span><br><span class="line">  <span class="function"><span class="keyword">public</span> <span class="title">HttpEncodingAutoConfiguration</span><span class="params">(HttpProperties properties)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.properties = properties.getEncoding();</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">//给容器添加一个组件  这个组件的一些值就是从HttpProperties类中获取的  就是最上边那个注解</span></span><br><span class="line">  <span class="comment">//@EnableConfigurationProperties(&#123;HttpProperties.class&#125;)</span></span><br><span class="line">  <span class="meta">@Bean</span></span><br><span class="line">  <span class="meta">@ConditionalOnMissingBean</span></span><br><span class="line">  <span class="function"><span class="keyword">public</span> CharacterEncodingFilter <span class="title">characterEncodingFilter</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        CharacterEncodingFilter filter = <span class="keyword">new</span> OrderedCharacterEncodingFilter();</span><br><span class="line">        filter.setEncoding(<span class="keyword">this</span>.properties.getCharset().name());</span><br><span class="line">        		  filter.setForceRequestEncoding(<span class="keyword">this</span>.properties.shouldForce(org.springframework.boot.autoconfigure.http.HttpProperties.Encoding.Type.REQUEST));</span><br><span class="line">        filter.setForceResponseEncoding(<span class="keyword">this</span>.properties.shouldForce(org.springframework.boot.autoconfigure.http.HttpProperties.Encoding.Type.RESPONSE));</span><br><span class="line">        <span class="keyword">return</span> filter;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>综上所述以<strong>AutoConfiguration</strong>结尾的这种类就是判断根据不同的条件判断配置类是否生效，如果生效:</p>
+<p>那么这个配置类就会给容器中添加组件。所添加组件的属性就是从<strong>properties</strong>配置文件中获取的  <strong>参考下一步</strong></p>
+</li>
+<li><p>进入<strong>HttpProperties</strong>类中，从<strong>ConfigurationProperties</strong>注解可以看出，这个类从配置文件中获取指定的值和<strong>bean</strong>属性进行绑定</p>
+<p>所以所有能在配置文件中进行配置的属性都是在以<strong>Properties</strong>的类中封装着</p>
+</li>
+<li><pre><code class="java"><span class="comment">//将配置文件对应的值和HttpProperties绑定起来</span>
+<span class="meta">@ConfigurationProperties</span>(
+    prefix = <span class="string">"spring.http"</span>
+)
+<span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">HttpProperties</span> </span>{
+  <span class="comment">/*其中的一些属性*/</span>
+              <span class="keyword">private</span> Charset charset;
+        <span class="keyword">private</span> Boolean force;
+        <span class="keyword">private</span> Boolean forceRequest;
+        <span class="keyword">private</span> Boolean forceResponse;
+        <span class="keyword">private</span> Map&lt;Locale, Charset&gt; mapping;</code></pre>
+</li>
+</ul>
+</li>
+</ol>
+<p><strong>总结:</strong></p>
+<ul>
+<li><p><strong>从启动类SpringBootApplication</strong>注解<strong>@EnableAutoConfiguration</strong>进入</p>
+</li>
+<li><p><strong>EnableAutoConfiguration</strong>类中的<strong>@Import注解导入AutoConfigurationImportSelector</strong>类</p>
+</li>
+<li><p><strong>AutoConfigurationImportSelector</strong>中的<strong>selectImports</strong>方法调用 <strong>getAutoConfigurationEntry(AutoConfigurationMetadata autoConfigurationMetadata, AnnotationMetadata annotationMetadata)</strong>方法，</p>
+</li>
+<li><p>这个方法里的</p>
+<p><strong>List<String> configurations = this.getCandidateConfigurations(annotationMetadata, attributes)</strong>这行代码里的方法又去调用<strong>SpringFactoriesLoader.loadFactoryNames(this.getSpringFactoriesLoaderFactoryClass(), this.getBeanClassLoader())</strong>方法</p>
+</li>
+<li><p>最终<strong>loadSpringFactories()</strong>方法将扫描类路径下的<strong>META-INF/spring.factories</strong>系统自动配置文件</p>
+</li>
+<li><p>配置文件中的所有以<strong>AutoConfiguration</strong>结尾的类都会被加载容器中</p>
+</li>
+<li><p>每个以<strong>AutoConfiguration</strong>结尾的类都会进行自动配置功能，在这种类的上面都会有<strong>@EnableConfigurationProperties({xxxxxProperties.class})</strong>注解，去加载以<strong>Properties</strong>结尾的配置类</p>
+</li>
+<li><p>以<strong>Properties</strong>结尾的配置类就会去根据**@ConfigurationProperties(</p>
+<pre><code>prefix = &quot;spring.http&quot;)**注解去绑定配置文件中我们给出的属性值 </code></pre></li>
+</ul>
+<p>至此，自动配置完成。</p>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/06/01/process-scheduling/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/06/01/process-scheduling/" itemprop="url"> process scheduling</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-06-01T21:38:44+08:00">
+                2019-06-01
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" itemprop="url" rel="index">
+                    <span itemprop="name">操作系统</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <p><strong>进程调度: 在合适的时候选择以一定的策略选择一个就绪进程运行</strong></p>
+<p>两个可以量化的衡量指标:</p>
+<ul>
+<li><strong>周转时间/平均周转时间</strong></li>
+<li><strong>带权周转时间/带权平均周转时间</strong></li>
+</ul>
+<p><strong>周转时间:</strong></p>
+<p>​    进程提交给计算机到最后完成所花费的时间(t)</p>
+<p>​    t = tc - ts   ts:进程的提交时间(Start);   tc:进程的完成时间(Complete)     </p>
+<p>​    <strong>意义: t说明了进程在系统中停留的时间长短</strong></p>
+<p><strong>平均周转时间:</strong></p>
+<p>t = (t1 +  t2 + t3…. + tn) / n</p>
+<p>​    <strong>意义:平均周转时间越短，意味着进程在系统中的停留的时间越短，因而系统的吞吐量就越大，资源利用率就</strong>          <strong>越高</strong></p>
+<p><strong>带权周转时间w:</strong></p>
+<p>​    小的进程所花费的周转时间肯定小，大的进程花费的时间肯定大，所以引入带权周转时间。</p>
+<p>​    <strong>w = t / tr</strong>        t:进程的周转时间;    tr:进程的运行时间</p>
+<p>​    意义:进程在系统中<strong>相对</strong>停留时间</p>
+<p><strong>平均带权周转时间</strong></p>
+<p>​    w = (w1 + w2 + w3 + … + wn) / n</p>
+<hr>
+<h3 id="典型的调度算法"><a href="#典型的调度算法" class="headerlink" title="典型的调度算法"></a>典型的调度算法</h3><h4 id="先来先服务-First-Come-First-Serve"><a href="#先来先服务-First-Come-First-Serve" class="headerlink" title="先来先服务(First Come First Serve)"></a>先来先服务(First Come First Serve)</h4><ul>
+<li><p><strong>算法</strong></p>
+<p>按照作业进入系统的时间先后来挑选作业，<strong>先进入系统的作业优先被运行</strong></p>
+</li>
+<li><p><strong>特点</strong></p>
+<ul>
+<li>容易实现 效率不高</li>
+<li><strong>只考虑了作业的等候时间，没有考虑作业运行时间的长短。</strong>因此一个晚来的但是运行时间很短的作业可能需要等待很长时间才能被运行。<strong>不利于短作业执行。</strong></li>
+</ul>
+</li>
+</ul>
+<h4 id="短作业优先调度算法-Short-Job-First"><a href="#短作业优先调度算法-Short-Job-First" class="headerlink" title="短作业优先调度算法(Short Job First)"></a>短作业优先调度算法(Short Job First)</h4><ul>
+<li><p><strong>算法</strong></p>
+<p>参考运行时间。选取运行时间最短的作业投入运行</p>
+</li>
+<li><p><strong>特点</strong></p>
+<ul>
+<li>容易实现 效率不高</li>
+<li><strong>忽视了作业的等待时间</strong>，一个早来但是很长的作业将会长时间得不到运行，易出现资源饥饿现象。</li>
+</ul>
+</li>
+</ul>
+<h4 id="响应比优先调度算法"><a href="#响应比优先调度算法" class="headerlink" title="响应比优先调度算法"></a>响应比优先调度算法</h4><ul>
+<li><p><strong>响应比定义: ** 作业的</strong>响应时间和<strong>与</strong>运行时间**的比值。</p>
+<p>响应比 = 响应时间 / 运行时间</p>
+<p>​            = (等待时间 + 运行时间) / 运行时间</p>
+<p>​            = 1 + 等待时间 / 运行时间</p>
+</li>
+<li><p><strong>算法</strong></p>
+<p>计算每个作业的响应比，选择<strong>响应比最高</strong>的作业优先投入运行</p>
+</li>
+<li><p><strong>特点(兼顾了长作业和短作业)</strong></p>
+<p><strong>响应比 = 1 + 等待时间 / 运行时间</strong></p>
+<ul>
+<li>如果作业<strong>等待时间</strong>相同，则运行时间越短的作业越先被执行，有利于短作业</li>
+<li>如果作业<strong>运行时间</strong>相同，则等待时间越长的作业越先被执行，等待时间长的作业</li>
+<li>对于一个运行时间长的作业，只要他等待的时间足够长，那么响应比就会增加，可能获取cpu</li>
+</ul>
+</li>
+</ul>
+<h4 id="优先数调度算法"><a href="#优先数调度算法" class="headerlink" title="优先数调度算法"></a>优先数调度算法</h4><ul>
+<li><p><strong>算法</strong></p>
+<ul>
+<li>根据进程优先数，把CPU分配给优先数最大的进程</li>
+<li><strong>优先数 = 静态优先数 + 动态优先数</strong></li>
+</ul>
+</li>
+<li><p><strong>静态优先数</strong></p>
+<p>进程创建时确定，整个进程运行期间不改变</p>
+<ul>
+<li><strong>静态优先数的确定</strong><ul>
+<li><strong>基于进程所需资源的多少</strong></li>
+<li><strong>基于程序运行时间的长短</strong></li>
+<li><strong>进程的类型(IO/CPU,核心/用户,前端/后台)</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>动态优先数</strong></p>
+<p>优先数在进程运行期间可以改变</p>
+<ul>
+<li><p><strong>动态优先数的确定</strong></p>
+<ul>
+<li><p><strong>当使用CPU使用超过一定时长时</strong></p>
+<p>可以适当降低</p>
+</li>
+<li><p><strong>当进行I/O操作后</strong></p>
+</li>
+<li><p><strong>当进程等待超过一定时长时</strong></p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h4 id="循环论转调度算法-ROUND-ROBIN"><a href="#循环论转调度算法-ROUND-ROBIN" class="headerlink" title="循环论转调度算法(ROUND-ROBIN)"></a>循环论转调度算法(ROUND-ROBIN)</h4><ul>
+<li><p><strong>概念</strong></p>
+<ul>
+<li><p>把所有就绪进程<strong>按先进先出的原则排成队列</strong>。新来的进程加到<strong>队列的末尾</strong>。</p>
+</li>
+<li><p><strong>进程以时间片q为单位轮流使用CPU。</strong>刚刚运行完的一个时间片进程排到队列末尾，等候下一轮运行。</p>
+<p>如果当前进程在时间片p内运行完成则撤出队列，否则加入队列末尾。</p>
+</li>
+<li><p>队列逻辑上是环形的。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os2.png" alt=""></p>
+</li>
+</ul>
+</li>
+<li><p><strong>优点</strong></p>
+<ul>
+<li><strong>公平性:</strong> 每个进程有平等的机会获取CPU。</li>
+<li><strong>交互性:</strong> 每个进程等待 (N - 1) * q 的时间就可以重新获得CPU</li>
+</ul>
+</li>
+<li><p>时间片<strong>q</strong>的大小</p>
+<ul>
+<li><p>如果q太大</p>
+<p>则会导致交互性变差，每个进程等待的时间变长，甚至退化成<strong>FCFS</strong>算法</p>
+</li>
+<li><p>如果<strong>q</strong>太小</p>
+<p>则进程切换频繁，系统开销增加</p>
+</li>
+</ul>
+</li>
+<li><p><strong>两种改进方法</strong></p>
+<ul>
+<li><strong>时间片的大小可以改变</strong></li>
+<li><strong>组织多个就绪队列</strong></li>
+</ul>
+</li>
+</ul>
+<h4 id="Linux进程调度"><a href="#Linux进程调度" class="headerlink" title="Linux进程调度"></a>Linux进程调度</h4><ul>
+<li><strong>普通进程</strong><ul>
+<li>采用<strong>动态优先级</strong>调度</li>
+<li>调度程序周期性的修改优先级(<strong>避免饥饿</strong>)</li>
+</ul>
+</li>
+<li><strong>实时进程</strong><ul>
+<li>采用<strong>静态优先级</strong>调度</li>
+<li>由用户预先指定，以后不会改变</li>
+</ul>
+</li>
+</ul>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/05/28/process/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/05/28/process/" itemprop="url">process</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-05-28T15:01:11+08:00">
+                2019-05-28
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" itemprop="url" rel="index">
+                    <span itemprop="name">操作系统</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <h3 id="进程概念"><a href="#进程概念" class="headerlink" title="进程概念"></a>进程概念</h3><h4 id="进程的基本概念"><a href="#进程的基本概念" class="headerlink" title="进程的基本概念"></a>进程的基本概念</h4><ul>
+<li><p>进程是程序在某个<strong>数据集合</strong>上的<strong>一次</strong>运行活动。</p>
+<p>注意: “一次”的意思就是程序运行多次那么就有多个进程</p>
+</li>
+<li><p>数据集合: 软/硬件环境,多个进程共存/共享的环境 </p>
+</li>
+</ul>
+<h4 id="进程的特征"><a href="#进程的特征" class="headerlink" title="进程的特征"></a>进程的特征</h4><ul>
+<li><p><strong>动态性</strong></p>
+<p>进程是程序的一次执行过程，动态的产生/消亡</p>
+</li>
+<li><p><strong>并发性</strong></p>
+<p>某一个进程同其他的进程共同向前推进</p>
+</li>
+<li><p><strong>异步性</strong></p>
+<p>某一进程按照自身的速度向前推进</p>
+</li>
+<li><p><strong>独立性</strong></p>
+<p>进程是系统分配资源的基本单位(cpu调度的基本单位是线程)</p>
+</li>
+</ul>
+<h4 id="进程同步机制"><a href="#进程同步机制" class="headerlink" title="进程同步机制"></a>进程同步机制</h4><h4 id="信号灯机制"><a href="#信号灯机制" class="headerlink" title="信号灯机制"></a>信号灯机制</h4><h5 id="基本概念"><a href="#基本概念" class="headerlink" title="基本概念"></a>基本概念</h5><p>进程在运行过程中<strong>受信号灯状态控制</strong>，并能<strong>改变信号灯状态</strong></p>
+<ul>
+<li><p><strong>进程受控制:</strong></p>
+<p>信号灯的状态可以阻塞或者唤醒进程</p>
+</li>
+<li><p><strong>改变信号灯:</strong></p>
+<p>信号灯的状态可以被进程改变</p>
+</li>
+</ul>
+<h5 id="信号灯的数据结构"><a href="#信号灯的数据结构" class="headerlink" title="信号灯的数据结构"></a>信号灯的数据结构</h5><p>信号灯定义为一个<strong>二元矢量(S,q)</strong></p>
+<ul>
+<li><strong>S: 整数，初值非负(S又称信号量)</strong></li>
+<li><strong>q: PCB队列，初值为空集</strong></li>
+</ul>
+<p>如用C语言来描述信号灯的数据结构为:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">strut SEMAPHORE</span><br><span class="line">&#123;</span><br><span class="line">	<span class="comment">//整数，初始值非负</span></span><br><span class="line">	<span class="keyword">int</span> S; </span><br><span class="line">	<span class="comment">//队列: 进程PCB指针,初始空集</span></span><br><span class="line">	pointer_PCB q;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<h5 id="信号灯的操作"><a href="#信号灯的操作" class="headerlink" title="信号灯的操作"></a>信号灯的操作</h5><ul>
+<li><p><strong>P操作</strong> (函数或者过程, P(S, q))</p>
+</li>
+<li><p><strong>V操作</strong>(函数或过程, V(S, q))</p>
+<p><strong>P、V是荷兰语: Passeren(P: 通过), Vrijgeven(V: 释放)</strong></p>
+</li>
+</ul>
+<p>下面解释P、V的具体意义。</p>
+<h5 id="P操作的原理-P-S-q-或者P-S"><a href="#P操作的原理-P-S-q-或者P-S" class="headerlink" title="P操作的原理(P(S, q)或者P(S))"></a>P操作的原理(P(S, q)或者P(S))</h5><p>分三步:</p>
+<ol>
+<li><strong>S值减1</strong></li>
+<li><strong>若差值大于或等于0,则该进程继续</strong></li>
+<li><strong>若差值小于零,则该进程阻塞并加入到队列q中,并转调度函数</strong></li>
+</ol>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">P(S, q)</span><br><span class="line">&#123;</span><br><span class="line">	S = S - <span class="number">1</span>;</span><br><span class="line">	<span class="keyword">if</span> (S &lt; <span class="number">0</span>) </span><br><span class="line">	&#123;</span><br><span class="line">    <span class="comment">//Caller 表示当前的进程 这一步把当前的进程加入到队列q</span></span><br><span class="line">		Insert(Caller, q);</span><br><span class="line">    <span class="comment">//把当前进程阻塞</span></span><br><span class="line">		Block(Caller);</span><br><span class="line">		转调度函数();</span><br><span class="line">	&#125;</span><br><span class="line">  <span class="comment">//如果S大于等于0 那么当前函数继续</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>通过以上代码得出:<strong>如果一个进程调用P操作可能会使自己在调用处阻塞。</strong></p>
+<h5 id="V操作的原理-V-S-q-或者V-S"><a href="#V操作的原理-V-S-q-或者V-S" class="headerlink" title="V操作的原理(V(S, q)或者V(S))"></a>V操作的原理(V(S, q)或者V(S))</h5><p>分三步:</p>
+<ol>
+<li><strong>S值加1</strong></li>
+<li><strong>如果当前和大于0,该进程继续</strong></li>
+<li><strong>如果当前和小于或等于0,该进程继续的同时从队列q中唤醒一个进程</strong></li>
+</ol>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">V(S, q)</span><br><span class="line">&#123;</span><br><span class="line">	S = S + <span class="number">1</span>;</span><br><span class="line">	<span class="keyword">if</span> (S &lt;= <span class="number">0</span>) &#123;</span><br><span class="line">		Remove(q, pid);</span><br><span class="line">		Wakeup(pid);</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<h5 id="利用P-V操作解决互斥问题"><a href="#利用P-V操作解决互斥问题" class="headerlink" title="利用P-V操作解决互斥问题"></a>利用P-V操作解决互斥问题</h5><ul>
+<li><p>实质上是对临界区的互斥访问</p>
+<p>允许最多一个进程处于临界区</p>
+</li>
+<li><p>应用过程</p>
+<ul>
+<li><strong>进入临界区之前先执行P操作</strong>(可能阻塞当前进程)</li>
+<li><strong>推出临界区之后再进行V操作</strong>(可能唤醒某个进程)</li>
+</ul>
+</li>
+</ul>
+<h5 id="利用P-V操作解决同步问题"><a href="#利用P-V操作解决同步问题" class="headerlink" title="利用P-V操作解决同步问题"></a>利用P-V操作解决同步问题</h5><ul>
+<li><p><strong>同步机制的实质</strong></p>
+<ul>
+<li>运行条件不满足的时候，能让进程暂停</li>
+<li>运行条件满足的时，能让程序立即继续运行</li>
+</ul>
+</li>
+<li><p><strong>P-V操作应用于进程同步的基本思路</strong></p>
+<ul>
+<li><p>暂停当前进程: 在关键操作之前执行 <strong>P</strong> 操作</p>
+<p>必要时可暂停</p>
+</li>
+<li><p>继续进程: 在关键操作之后执行 <strong>V</strong> 操作</p>
+<p>必要时唤醒 <strong>合作进程</strong></p>
+</li>
+<li><p>定义有意义的信号量</p>
+<p>信号量能明确表示 “运行条件”</p>
+</li>
+</ul>
+</li>
+<li><p><strong>实现进程同步的例子</strong> (公交车司机vs售票员)</p>
+<ul>
+<li><strong>司机(进程)运行过程</strong><ul>
+<li>起步</li>
+<li>行驶</li>
+<li>停车</li>
+</ul>
+</li>
+<li><strong>售票员运行过程</strong><ul>
+<li>关门</li>
+<li>售票</li>
+<li>开门</li>
+</ul>
+</li>
+<li><strong>同步要求</strong><ol>
+<li>只有 <strong>售票员</strong> <strong>关门</strong> 后 <strong>司机</strong> 才能 <strong>起步</strong></li>
+<li>只有 <strong>司机</strong> <strong>停车</strong> 后 <strong>售票员</strong> 才能 <strong>开门</strong></li>
+</ol>
+</li>
+</ul>
+</li>
+<li><p>伪代码</p>
+<p>对另一个进程有影响的操作称为 <strong>关键操作</strong>,  信号量就定义在关键操作上</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//信号量1 门是否关好 0:没有		1:关好</span></span><br><span class="line"><span class="keyword">int</span> S1 = <span class="number">0</span>;</span><br><span class="line"><span class="comment">//信号量2 车是否挺稳 0:没有		1:停稳</span></span><br><span class="line"><span class="keyword">int</span> S2 = <span class="number">0</span>;</span><br><span class="line">driver <span class="built_in">process</span>:</span><br><span class="line"><span class="keyword">while</span> (<span class="literal">true</span>)</span><br><span class="line">&#123;</span><br><span class="line">  P(S1);</span><br><span class="line">	起步;</span><br><span class="line">	行驶;</span><br><span class="line">	停车;</span><br><span class="line">  V(S2);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">conductor <span class="built_in">process</span>:</span><br><span class="line"><span class="keyword">while</span> (<span class="literal">true</span>)</span><br><span class="line">&#123;</span><br><span class="line">  关门;</span><br><span class="line">  V(S1);</span><br><span class="line">  售票;</span><br><span class="line">  P(S2);</span><br><span class="line">  开门;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ul>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/05/20/CPU%E7%9A%84%E6%80%81%E5%92%8C%E4%B8%AD%E6%96%AD%E6%9C%BA%E5%88%B6/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/05/20/CPU%E7%9A%84%E6%80%81%E5%92%8C%E4%B8%AD%E6%96%AD%E6%9C%BA%E5%88%B6/" itemprop="url">CPU的态和中断机制</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-05-20T13:35:17+08:00">
+                2019-05-20
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" itemprop="url" rel="index">
+                    <span itemprop="name">操作系统</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <h3 id="CPU的态"><a href="#CPU的态" class="headerlink" title="CPU的态"></a>CPU的态</h3><h4 id="支持操作系统的最基本的硬件结构"><a href="#支持操作系统的最基本的硬件结构" class="headerlink" title="支持操作系统的最基本的硬件结构"></a>支持操作系统的最基本的硬件结构</h4><ul>
+<li><strong>CPU</strong></li>
+<li><strong>内存</strong></li>
+<li><strong>中断</strong></li>
+<li><strong>时钟</strong></li>
+</ul>
+<h4 id="CPU的态-Model"><a href="#CPU的态-Model" class="headerlink" title="CPU的态(Model)"></a>CPU的态(Model)</h4><ul>
+<li><p>CPU的工作状态</p>
+</li>
+<li><p>对资源和指令使用权限的描述</p>
+<p>特权指令:</p>
+<ul>
+<li>LGDT/LIDT: 装载特殊寄存器</li>
+<li>CLTS: 清除任务开关标志</li>
+<li><strong>STI/CTI: 允许和禁止中断</strong></li>
+<li>HALT: 停止CPU的工作</li>
+<li>IN/OUT: 执行I/O操作</li>
+<li>从核态转为用户态</li>
+</ul>
+</li>
+</ul>
+<h4 id="态的分类"><a href="#态的分类" class="headerlink" title="态的分类"></a>态的分类</h4><ul>
+<li><p><strong>核态(Kernel mode)</strong></p>
+<ul>
+<li>能够访问所有的资源和执行所有的指令</li>
+<li>管理程序内核</li>
+</ul>
+</li>
+<li><p><strong>用户态(User mode, 目态)</strong></p>
+<ul>
+<li>仅能访问部分资源， 其他资源受限</li>
+<li>仅能管理用户程序</li>
+</ul>
+</li>
+<li><p><strong>管态(Supervisor mode)</strong></p>
+<p>介于<strong>核态</strong>和<strong>用户态</strong>之间</p>
+</li>
+</ul>
+<h4 id="用户态与内核态之间的转换"><a href="#用户态与内核态之间的转换" class="headerlink" title="用户态与内核态之间的转换"></a>用户态与内核态之间的转换</h4><ul>
+<li><p>用户态向内核态转换</p>
+<ul>
+<li>用户请求OS服务</li>
+<li>发生中断(在内核态执行)</li>
+<li>用户进程错误(内部中断)</li>
+<li>用户态企图执行特权命令</li>
+</ul>
+</li>
+<li><p>核态向用户态转换</p>
+<p>一般是<strong>内核态执行完中断指令</strong>后返回</p>
+</li>
+</ul>
+<h4 id="CPU读取指令或数据时的访问顺序"><a href="#CPU读取指令或数据时的访问顺序" class="headerlink" title="CPU读取指令或数据时的访问顺序"></a>CPU读取指令或数据时的访问顺序</h4><ol>
+<li><p><strong>访问缓存(命中, HIT)</strong></p>
+</li>
+<li><p><strong>访问内存(没有命中, MISS)</strong></p>
+</li>
+<li><p><strong>访问辅存(缺页, PAGE_FAULT)</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/OS/os1.png" alt=""></p>
+</li>
+</ol>
+<h3 id="中断机制"><a href="#中断机制" class="headerlink" title="中断机制"></a>中断机制</h3><h4 id="中断定义"><a href="#中断定义" class="headerlink" title="中断定义"></a>中断定义</h4><ul>
+<li>是指CPU对突发的外部事件的反应过程或机制</li>
+<li>CPU收到<strong>外部信号(中断信号)</strong>后，停止当前工作，转区处理该<strong>外部事件</strong>，处理完毕后回到原来工作的<strong>中断处(断点)</strong>继续工作</li>
+</ul>
+<h4 id="中断的概念"><a href="#中断的概念" class="headerlink" title="中断的概念"></a>中断的概念</h4><ul>
+<li><p><strong>断点</strong></p>
+<ul>
+<li><p>程序中断的地方，<strong>将要执行的下一条指令的地址</strong></p>
+</li>
+<li><p><strong>CS:IP</strong> </p>
+<p>程序要执行的下一条指令的地址就是放在这两个寄存器中</p>
+</li>
+</ul>
+</li>
+<li><p><strong>上下文</strong></p>
+<p>程序正确运行所依赖的信息集合</p>
+<ul>
+<li>相关寄存器</li>
+</ul>
+</li>
+<li><p><strong>上下文的两个处理过程</strong></p>
+<ul>
+<li>上下文的保护: 进入中断服务之前，<strong>入栈</strong></li>
+<li>上下文的恢复: 退出中断服务程序之后，<strong>出栈</strong></li>
+</ul>
+</li>
+</ul>
+<h4 id="中断响应的过程"><a href="#中断响应的过程" class="headerlink" title="中断响应的过程"></a>中断响应的过程</h4><ol>
+<li><p>识别中断源</p>
+<p>是谁产生了中断</p>
+</li>
+<li><p>保护断点和上下文信息</p>
+</li>
+<li><p>装入<strong>中断服务程序</strong>的入口地址(<strong>CS:IP</strong>)</p>
+</li>
+<li><p>进入中断服务程序</p>
+</li>
+<li><p>恢复现场和断点</p>
+</li>
+<li><p>中断返回: <strong>IRET</strong>指令</p>
+<p>会把断点弹出到<strong>CS:IP寄存器</strong>内，只要<strong>更新CS:IP的地址，将CS:IP的地址更新为原来断点的地址</strong>，那么原来的程序就可以继续运行。</p>
+</li>
+</ol>
+<h4 id="中断响应的实质"><a href="#中断响应的实质" class="headerlink" title="中断响应的实质"></a>中断响应的实质</h4><ul>
+<li><p><strong>交换指令执行地址</strong></p>
+<p><strong>实际上就是CS:IP地址的更新，即当前程序的执行IP与中断程序的执行IP的交换</strong></p>
+</li>
+<li><p><strong>交换CPU的态</strong></p>
+<p>中断指令是在内核态执行的，所以会发生用户态和内核态的转换</p>
+</li>
+</ul>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/05/12/NIO/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/05/12/NIO/" itemprop="url">NIO</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-05-12T16:41:31+08:00">
+                2019-05-12
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java-I-O/" itemprop="url" rel="index">
+                    <span itemprop="name">Java I/O</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <p><a href="https://www.ibm.com/developerworks/cn/java/j-lo-javaio/index.html" target="_blank" rel="noopener">入门文章</a></p>
+<h4 id="BIO的缺点"><a href="#BIO的缺点" class="headerlink" title="BIO的缺点"></a>BIO的缺点</h4><p> BIO就是阻塞I/O，在InputStream(读数据)或者OutputStream(写数据)时都有可能阻塞。阻塞后就会失去CPU的使用权，这种下不能承受大规模的访问。应对这种问题解决的方法可以是通过线程池运用多线程，当一个线程出现阻塞时其他线程还可以继续工作。但是当面对一些需要大量Http长连接的情况，服务端需要同时保持几百万的HTTP连接，如淘宝的”旺旺项目”，线程池不能同时保持几百万的线程或者无法升级某些用户的优先级，还有<strong>多线程竞争同一资源的同步问题</strong>。</p>
+<h4 id="NIO的工作机制"><a href="#NIO的工作机制" class="headerlink" title="NIO的工作机制"></a>NIO的工作机制</h4><h5 id="NIO类图"><a href="#NIO类图" class="headerlink" title="NIO类图"></a>NIO类图</h5><p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/nio.png" alt=""></p>
+<h5 id="重要的核心概念"><a href="#重要的核心概念" class="headerlink" title="重要的核心概念"></a>重要的核心概念</h5><ul>
+<li><strong>Channel:</strong> 如果拿Socket通信来做类比，socket就是两个点之间的交通工具，而channel更为具体，他表示更为具体的交通工具如高铁、飞机等等。</li>
+<li><strong>Selector:</strong> selector可以比作为一个车站的车辆运行调度系统，它负责监控每辆车的运行状态，是已经出站还是在路上等等，即他可以<strong>轮询</strong>每个channel的状态。</li>
+<li><strong>Buffer:</strong> Buffer类比Stream类更为具体，它可以类比为车上的车坐，如果，channel是高铁，它就表示高铁上的座位，如果channel表示飞机，那么他就是飞机上的座位。而Stream只是抽象的表示一个座位，在你上车之前你并不知道这个车上还有没有座位了，也不知道上的是什么车。这些信息都被封装在Socket中。</li>
+</ul>
+<p>NIO引入了以上的概念，就是想让这些信息具体化，让我们有机会去控制他们，如: 当我们调用write()往SendQ写数据时，当一次写的数据超过SendQ长度，则需要按照SendQ长度进行切割，这个过程需要进行用户态和内核态的切换，而这个切换我们不可以控制。而在Buffer中我们可以控制Buffer的capacity，并且是否扩容以及如何扩容都可以控制。</p>
+<h5 id="NIO工作代码示例"><a href="#NIO工作代码示例" class="headerlink" title="NIO工作代码示例"></a>NIO工作代码示例</h5><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">selector</span><span class="params">()</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        ByteBuffer buffer = ByteBuffer.allocate(<span class="number">1024</span>);</span><br><span class="line">  			<span class="comment">//通过调用Selector的静态工厂创建一个选择器</span></span><br><span class="line">        Selector selector = Selector.open();</span><br><span class="line">  			<span class="comment">//创建一个服务端的Channel</span></span><br><span class="line">        ServerSocketChannel ssc = ServerSocketChannel.open();</span><br><span class="line">  			<span class="comment">//设置为非阻塞方式</span></span><br><span class="line">        ssc.configureBlocking(<span class="keyword">false</span>);</span><br><span class="line">  			<span class="comment">//把channel绑定到一个Socket对象上，</span></span><br><span class="line">        ssc.socket().bind(<span class="keyword">new</span> InetSocketAddress(<span class="number">8080</span>));</span><br><span class="line">  			<span class="comment">//注册监听的事件</span></span><br><span class="line">        ssc.register(selector, SelectionKey.OP_ACCEPT);</span><br><span class="line">        <span class="keyword">while</span> (<span class="keyword">true</span>) &#123;</span><br><span class="line">          	<span class="comment">//取得所有key集合 轮询的来检查已经注册在这个选择器上的所有通信信道是否有需要的事件发生，如果某个事件发生时 将会返回所有的SelectionKey，通过这个对象的channel方法就可以获得这个通信信道对象从而可以读取通信的数据，这里读取的数据是  Buffer  ，这个Buffer是我们可以控制的缓冲器</span></span><br><span class="line">            Set selectedKeys = selector.selectedKeys();</span><br><span class="line">            Iterator it = selectedKeys.iterator();</span><br><span class="line">            <span class="keyword">while</span> (it.hasNext()) &#123;</span><br><span class="line">                SelectionKey key = (SelectionKey) it.next();</span><br><span class="line">                <span class="keyword">if</span> ((key.readyOps() &amp; SelectionKey.OP_ACCEPT) == SelectionKey.OP_ACCEPT) &#123;</span><br><span class="line">                    ServerSocketChannel ssChannel = (ServerSocketChannel) key.channel();</span><br><span class="line">                  	<span class="comment">//接受到服务端的请求</span></span><br><span class="line">                		SocketChannel sc = ssChannel.accept();</span><br><span class="line">                    sc.configureBlocking(<span class="keyword">false</span>);</span><br><span class="line">                    sc.register(selector, SelectionKey.OP_READ);</span><br><span class="line">                    it.remove();</span><br><span class="line">                &#125; <span class="keyword">else</span> <span class="keyword">if</span> </span><br><span class="line">                ((key.readyOps() &amp; SelectionKey.OP_READ) == SelectionKey.OP_READ) &#123;</span><br><span class="line">                    SocketChannel sc = (SocketChannel) key.channel();</span><br><span class="line">                    <span class="keyword">while</span> (<span class="keyword">true</span>) &#123;</span><br><span class="line">                        buffer.clear();</span><br><span class="line">                      	<span class="comment">//读取数据</span></span><br><span class="line">                        <span class="keyword">int</span> n = sc.read(buffer);</span><br><span class="line">                        <span class="keyword">if</span> (n &lt;= <span class="number">0</span>) &#123;</span><br><span class="line">                            <span class="keyword">break</span>;</span><br><span class="line">                        &#125;</span><br><span class="line">                        buffer.flip();</span><br><span class="line">                    &#125;</span><br><span class="line">                    it.remove();</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>上面的代码监听请求的事件和处理请求的事件放在同一个线程中执行，但是在实际的应用中，通常是放在两个线程中，即一个线程负责专门的监听客户端连接请求 而且是以<strong>阻塞方式</strong>进行 另一个线程专门处理请求，这个<strong>处理请求的线程才会真正的采用NIO的方式</strong>。</p>
+<p><strong>基于NIO的Socket请求处理过程</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/niowork.png" alt=""></p>
+<p><strong>Selector</strong>监听一组通信信道上的I/O状态，前提是这个Selector要已经注册到这些通信信道中。选择器Selector可以调用select()方法检查已经注册的通信信道上是否有I/O已经准备好，如果没有至少一个信道I/O有变化，那么select方法会阻塞等待或在超时时间后返回0。上图中如果多个信道有数据 那么会将这些数据分配到对应数据的Buffer中。所以关键的地方是<strong>有一个线程来处理所有连接的数据交互，每个连接数据交互都不是阻塞方式，所以可以同时处理大量的连接请求。</strong></p>
+<p><strong>Buffer中的参数项</strong></p>
+<table>
+<thead>
+<tr>
+<th align="left"><strong>索引</strong></th>
+<th align="left"><strong>说明</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">capacity</td>
+<td align="left">缓冲区数组的总长度</td>
+</tr>
+<tr>
+<td align="left">position</td>
+<td align="left">下一个要操作的数据元素的位置</td>
+</tr>
+<tr>
+<td align="left">limit</td>
+<td align="left">缓冲区数组中不可操作的下一个元素的位置，limit&lt;=capacity</td>
+</tr>
+<tr>
+<td align="left">mark</td>
+<td align="left">用于记录当前 position 的前一个位置或者默认是 0</td>
+</tr>
+</tbody></table>
+<p>实际操作时，以上参数有如下关系:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer1.png" alt=""></p>
+<p>通过<strong>ByteBuffer.allocate(11)</strong>方法创建一个11个byte的缓冲区，初始状态如上图所示，<strong>position</strong>的位置是0，<strong>capacity</strong>和<strong>limit</strong>的大小都是初始数组的长度，当写入5个字节时位置变化如下:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer2.png" alt=""></p>
+<p>这时如果我们需要将缓冲区这5个字节写入<strong>channel</strong>通信信道，需要调用byteBuffer.filp()方法，数组的状态发生如下变化:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer3.png" alt=""></p>
+<p>这时操作系统就可以将这5个字节写出去，当下一次使用缓冲区的时候调用一下clear()方法，这些<strong>指针</strong>又回到初始状态。</p>
+<p><strong>mark:</strong> 当我们使用<strong>mark()</strong>时，它将<strong>记录当前position位置的前一个位置，当调用reset时，position将恢复mark记录下的值。</strong></p>
+<blockquote>
+<p><strong>通过 Channel 获取的 I/O 数据首先要经过操作系统的 Socket 缓冲区再将数据复制到 Buffer 中，这个的操作系统缓冲区就是底层的 TCP 协议关联的 RecvQ 或者 SendQ 队列，从操作系统缓冲区到用户缓冲区复制数据比较耗性能，Buffer 提供了另外一种直接操作操作系统缓冲区的的方式即 ByteBuffer.allocateDirector(size)，这个方法返回的 byteBuffer 就是与底层存储空间关联的缓冲区，它的操作方式与 linux2.4 内核的 sendfile 操作方式类似。</strong></p>
+</blockquote>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/05/06/Java-I-O/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/05/06/Java-I-O/" itemprop="url">Java I/O</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-05-06T11:00:39+08:00">
+                2019-05-06
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java-I-O/" itemprop="url" rel="index">
+                    <span itemprop="name">Java I/O</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <h3 id="一、UNIX中的I-O"><a href="#一、UNIX中的I-O" class="headerlink" title="一、UNIX中的I/O"></a>一、UNIX中的I/O</h3><h4 id="简述"><a href="#简述" class="headerlink" title="简述"></a>简述</h4><p><strong>UNIX系统将所有的外部设备都看作文件</strong>，所有打开的文件都通过文件描述符来引用。UNIX的输入输出遵循<strong>Open-Read-Write-Close</strong>这套规范。当一个用户进程进行I/O操作之前，他需要调用<strong>(1)</strong>Open来指定并获取操作文件或设备读取或写入的权限。一旦I/O操作对象被打开，那么这个用户进程就可以对该对象进行一次或多次的读、写操作。<strong>(2)</strong>Read操作从I/O操作设备读取数据，并将数据传递给用户。<strong>(2)</strong>Write操作将用户进程中的数据传写入到I/O操作对象。当所有的R/W操作结束后，用户进程<strong>(3)</strong>调用Close来关闭Open打开的文件。这些操作都是通过<strong>文件描述符</strong>操作。文件描述符是一个非负整数，它指向内核中的一个结构体。当打开一个现有文件或者创建一个新的文件夹时，内核向进程返回一个文件描述符。socket读写的文件描述符为<strong>socketfd</strong>。</p>
+<h4 id="I-O模型的分类"><a href="#I-O模型的分类" class="headerlink" title="I/O模型的分类"></a>I/O模型的分类</h4><p>在UNIX系统中，I/O操作通常包含以下两个不同的阶段:</p>
+<ul>
+<li><strong>数据准备</strong></li>
+<li><strong>从内核向进程复制数据</strong></li>
+</ul>
+<p>例如对于套接字的输入，第一步是等待数据从网络中到达，当所有的等待数据到达时，数据被复制到内核中的缓冲区。第二步把数据从内核缓冲区复制到应用进程的缓冲区。根据在这两个不同阶段处理的不同，可以将I/O模型划分为五种类型:</p>
+<ol>
+<li><p><strong>阻塞式I/O模型</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160609135646100_meitu_1.jpg" alt=""></p>
+<p>应用进程调用recvfrom函数，然后切换到内核空间中运行，直到数据包到达且被复制到应用进程缓冲区中才返回。<strong>进程从调用recvfrom函数到函数返回的整段时间内是被阻塞的。</strong>recvfrom函数成功返回后，进程才接着往下执行处理数据。</p>
+</li>
+<li><p><strong>非阻塞式I/O模型</strong></p>
+<p>等待I/O数据的<strong>第一阶段</strong>，进程并不阻塞，如果recvfrom函数没有马上执行完，则立即返回一个错误。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160609135720523_meitu_1.jpg" alt=""></p>
+<p>如果调用recvfrom函数后内核没有立即返回数据，则应用进程采用<strong><em>轮询</em></strong>的方式不断的执行函数。</p>
+</li>
+<li><p><strong>I/O复用模型</strong></p>
+<p>select()、poll()函数都使用了I/O复用模型。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160609135743772_meitu_2.jpg" alt=""></p>
+<p>当调用select()函数时，进程将会被阻塞，等待数据报准备好，返回可读提示。当等待的多个套接字中的一个或者多个变的可用时，进程调用recvfrom()函数，把数据报从内核缓冲区复制到应用进程缓冲区。这个过程中<strong>第一阶段的时候是可以接受多个请求的，即调用多次select()函数，而第二阶段数据复制到应用缓冲区的过程是阻塞的。</strong>这种模型的优势就在于在第一阶段可以<strong>同时</strong>等待多个套接字描述符就绪。</p>
+</li>
+<li><p><strong>信号驱动式I/O模型</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160609135826601_meitu_3.jpg" alt=""></p>
+<p>这种模型据说应用的比较少。</p>
+<blockquote>
+<p>使用这种模型需要开启套接字的信号驱动I/O功能，并通过sigaction系统调用安装一个信号处理函数。sigaction函数立即返回，我们的进程继续工作，即进程没有被阻塞。当数据报准备好时，内核会为该进程产生一个SIGIO信号，这样我们可以在信号处理函数中调用recvfrom读取数据报，也可以在主循环中读取数据报。无论如何处理SIGIO信号，这种模型的优势在于等待数据报到达期间不被阻塞。</p>
+</blockquote>
+</li>
+<li><p><strong>异步I/O模型</strong></p>
+<p>异步I/O的工作机制是让整个第一阶段和第二阶段的操作都交给内核来完成，等操作完成后再通知进程。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160609135848507_meitu_4.jpg" alt=""></p>
+<p>与信号驱动式I/O模型不同的地方就是，异步I/O模型整个过程都是交给内核完成，自己只是等待aio_read()函数发送完成信号。信号驱动式I/O模型在第一阶段会返回信号，根据信号再调用recvfrom()函数，第二阶段是阻塞的。</p>
+</li>
+</ol>
+<p>注: recvfrom()函数是UDP套接字中的函数，类似于标准的read()函数。它的作用是从指定的套接字中读取数据报，它会从应用进程切换到内核，并在执行一段时间后返回到应用进程。</p>
+<p>总结：以上五种I/O模型中，前四种在第二阶段都会调用recvfrom()函数阻塞进程，只有<strong>异步I/O模型</strong>在整个过程中都是交给内核完成，没有阻塞。</p>
+<h4 id="同步I-O和异步I-O的区别"><a href="#同步I-O和异步I-O的区别" class="headerlink" title="同步I/O和异步I/O的区别"></a>同步I/O和异步I/O的区别</h4><ul>
+<li>同步I/O：导致请求进程阻塞直到I/O操作完成</li>
+<li>异步I/O：不导致请求进程阻塞</li>
+</ul>
+<h3 id="装饰器模式与Java-I-O"><a href="#装饰器模式与Java-I-O" class="headerlink" title="装饰器模式与Java I/O"></a>装饰器模式与Java I/O</h3><p>装饰器模式的做用就是在不修改原有接口的情况下给原接口增加新的功能。</p>
+<p>以下是一个简单的装饰器模式:</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@author</span> :liupf</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@description</span> :声音放大器  在不修改Person原有功能的情况下 给Person的say()方法增加功能。</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@date</span> :2019/05/10 23:59</span></span><br><span class="line"><span class="comment"> **/</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">SoundIntensifier</span> </span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> </span>&#123;</span><br><span class="line">        Person person = <span class="keyword">new</span> Person();</span><br><span class="line">        person.setVoice(<span class="number">10</span>);</span><br><span class="line"></span><br><span class="line">        Amplifier amplifier = <span class="keyword">new</span> Amplifier(person);</span><br><span class="line">        amplifier.say();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">interface</span> <span class="title">Say</span></span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">void</span> <span class="title">say</span><span class="params">()</span></span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">Person</span> <span class="keyword">implements</span> <span class="title">Say</span></span>&#123;</span><br><span class="line">    <span class="comment">/** 声音分贝*/</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">int</span> voice;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">getVoice</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> voice;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setVoice</span><span class="params">(<span class="keyword">int</span> voice)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.voice = voice;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">say</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="keyword">this</span>.voice);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">Amplifier</span> <span class="keyword">implements</span> <span class="title">Say</span></span>&#123;</span><br><span class="line">    Person person;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">Amplifier</span><span class="params">(Person person)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.person = person;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">say</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(person.getVoice() * <span class="number">10</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>具体的装饰器模式有四个组成部分，上边只是简要的代码没有完全体现出。四部分为以下几点:</p>
+<ul>
+<li><strong>抽象组件:</strong> 需要被装饰的抽象对象，通常是接口</li>
+<li><strong>具体组件:</strong> 抽象组件的实现，在上文中是<strong>Person类</strong></li>
+<li><strong>抽象装饰者:</strong> 包含了对抽象组件的引用以及抽象组件需要装饰的方法，<strong>需要实现抽象组件接口</strong></li>
+<li><strong>具体装饰者:</strong> 抽象装饰者的具体实现，在上文中是<strong>Amplifier类</strong></li>
+</ul>
+<p>在Java的I/O包下:</p>
+<ul>
+<li>抽象组件: InputStream、OutputStream等</li>
+<li>具体组件: FileInputStream、FileOutputStream等(节点流)</li>
+<li>抽象装饰者: FilerInputStream等</li>
+<li>具体装饰者: BufferInputStream等(处理流，对节点流功能的增强)</li>
+</ul>
+<h3 id="Java-I-O"><a href="#Java-I-O" class="headerlink" title="Java I/O"></a>Java I/O</h3><p><strong>Java中的I/O传输的数据全部都是以流的方式保存，而所有流的本质实际上都是字节。</strong></p>
+<h4 id="I-O流类图"><a href="#I-O流类图" class="headerlink" title="I/O流类图"></a>I/O流类图</h4><p>​    (图源网络侵删)</p>
+<ul>
+<li><p><strong>I/O流</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/1345308068_2461.jpg" alt=""></p>
+</li>
+<li><p><strong>字节流</strong></p>
+<p>字节流处理的单元为一个字节。操作的对象是字节、字节数组。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160526175652807_meitu_1.jpg" alt=""></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160526175652807_meitu_1.jpg" alt=""></p>
+</li>
+<li><p><strong>字符流(一个字符两个字节)</strong></p>
+<p>字符流处理的单元为两个字节的Unicode字符。操作的对象是字符、字符数组、字符串。</p>
+<ul>
+<li><strong>输出流(Writer):</strong> 他将要写入文件到的字符序列按照编码的方式(如UTF-8、GBK等)转换为字节序列写入文件。</li>
+<li><strong>输入流(Reader):</strong> 他将从文件中读取的字节序列按照指定编码格式转换成字符输出到内存中。</li>
+</ul>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160526175730259_meitu_3.jpg" alt=""></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/20160526175716649_meitu_4.jpg" alt=""></p>
+</li>
+</ul>
+<h4 id="区别与联系"><a href="#区别与联系" class="headerlink" title="区别与联系"></a>区别与联系</h4><p>这一小节写的很乱 有些地方没有彻底理解 先写下 待考证。</p>
+<hr>
+<ul>
+<li><p>当系统给你的文件是字节流，但是文件确实全文本时 就可以通过InputStreamReader来进行指定字符集的转换</p>
+</li>
+<li><p>而OutputStream是将字符流按照指定的字符集进行<strong>编码</strong> 输出为字节流。</p>
+</li>
+</ul>
+<p>实际上在计算机底层处理的全部是字节。对字符流的处理实际上是根据编码规则比如UTF-8或者Unicode等字符集翻译成字节。这两者之间的转化在Java中是通过<strong>InputStreamReader</strong>，<strong>OutputStreamWriter</strong>来完成的。<u>InputStreamReader将输入的字节流变为字符流。OutputStreamWriter将输出的字节流转为字符流</u>。</p>
+<p><strong>字节流可以读字符，但是字符流不可以读字节。原因：字节流读取数据的时候读到的全是文件数据的字节形式 等到写入到文件时也是字节，这个过程中没有进行字符集解码。但是字符流读取字节数据的时候会根据字符流的指定字符集进行解码，写入到另一个文件时其实是乱码的字符。</strong></p>
+<p>但是使用字节流读取字符文本时存在另一个问题:如果每次读到的字节数不是字符文本中字符的字节数，那么读出来的数据就可能是乱码。所以要使用字符流。</p>
+<p><strong>字节数组流不需要释放(ByteArrayInput/OutputStream)。</strong>常规操作文件的流如InputStream、OutputStream操作文件时，都是在硬盘上进行修改。这时就需要用到操作系统来代理操作。结束后要通知操作系统关闭。而操作字节数组时，是在内存上进行操作，这时完全由Java虚拟机来掌握。不需要显示的关闭I/O流。</p>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/04/21/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3ThreadPoolExecutor/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/04/21/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3ThreadPoolExecutor/" itemprop="url">深入理解ThreadPoolExecutor</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-04-21T15:56:45+08:00">
+                2019-04-21
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B/" itemprop="url" rel="index">
+                    <span itemprop="name">并发编程</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <h3 id="一、ThreadPoolExecutor的继承关系"><a href="#一、ThreadPoolExecutor的继承关系" class="headerlink" title="一、ThreadPoolExecutor的继承关系"></a>一、ThreadPoolExecutor的继承关系</h3><p><img src="http://pqghh5se3.bkt.clouddn.com//%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3ThreadPoolExecutor/006tNc79ly1g2abfyz4ulj311q0oktaj.jpg" alt="006tNc79ly1g2abfyz4ulj311q0oktaj"></p>
+<p>向上继承自AbstractExecutorService，向下被ScheduledThreadPoolExecutor继承</p>
+<p><strong><em>工作线程的存放位置:</em></strong> <strong><code>private final HashSet&lt;Worker&gt; workers = new HashSet&lt;Worker&gt;();</code></strong></p>
+<p><strong><em>阻塞队列:</em></strong> <strong><code>private final BlockingQueue&lt;Runnable&gt; workQueue;</code></strong></p>
+<h3 id="二、重要的变量"><a href="#二、重要的变量" class="headerlink" title="二、重要的变量"></a>二、重要的变量</h3><ul>
+<li><p><strong>ctl</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> AtomicInteger ctl = <span class="keyword">new</span> AtomicInteger(ctlOf(RUNNING, <span class="number">0</span>));</span><br><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">int</span> <span class="title">ctlOf</span><span class="params">(<span class="keyword">int</span> rs, <span class="keyword">int</span> wc)</span> </span>&#123; <span class="keyword">return</span> rs | wc; &#125;</span><br></pre></td></tr></table></figure>
+
+<p>ctl是一个AtomicInteger原子类对象。一个ctl变量包含两部分信息:<strong><em>线程池的运行状态(rs)</em></strong>和<strong><em>线程池内有效线程的数量(wc)</em></strong>。由于一个int型的变量是由32位二进制数组成，所以ctl的高3位表示线程池的运行状态，用低29位来表示线程池内有效线程的数量(所以线程池的线程数量的上限就是29个1表示的数字）。而ctl的数值就是由这两个变量计算得出。(ctlOf(int rs, int wc)函数)</p>
+<p>同样的如果知道了ctl值也可以通过以下两个方法计算得出线程池的运行状态和线程池内有效线程的数量。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">int</span> <span class="title">runStateOf</span><span class="params">(<span class="keyword">int</span> c)</span>     </span>&#123; <span class="keyword">return</span> c &amp; ~CAPACITY; &#125;</span><br><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">int</span> <span class="title">workerCountOf</span><span class="params">(<span class="keyword">int</span> c)</span>  </span>&#123; <span class="keyword">return</span> c &amp; CAPACITY; &#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中<strong>CAPACITY</strong>表示高三位是0，低29位是1的一个int型的数。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> COUNT_BITS = Integer.SIZE - <span class="number">3</span>;</span><br><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> CAPACITY   = (<span class="number">1</span> &lt;&lt; COUNT_BITS) - <span class="number">1</span>;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p><strong>线程池的运行状态(5种)</strong></p>
+<ol>
+<li><strong>RUNNING(运行状态)：</strong>能接受新提交的任务并且也能处理阻塞队列中的任务。</li>
+<li><strong>SHUTDOWN(关闭状态)：</strong>不再接受新提交的任务但是可以继续处理阻塞队列中保存的任务。在线程池处于RUNNING状态时调用shutdown()方法可以进入该状态。</li>
+<li><strong>STOP：</strong>不能接受新提交的任务也不能处理阻塞队列中已保存的任务，并且会中断正在处理中的任务。在线程池处于RUNNING或者SHUTDOWN状态时调用showdownNow()方法可以进入此状态。</li>
+<li><strong>TIDYING(清理状态)：</strong>所有的任务都已终止了，workCount(有效线程数)为0，线程进入该状态后会调用<strong>terminated()</strong>方法以让该线程池进入TERMINATED状态。当线程池处于SHUTDOWN状态时，如果此后线程池内没有线程了并且阻塞队列内也没有待执行的任务了，线程就会进入该状态；当线程处于STOP状态时，如果此后线程池内没有线程就会进入到该状态。</li>
+<li><strong>TERMINATED：</strong>terminated()方法执行完就进入该状态。</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// runState is stored in the high-order bits</span></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> RUNNING    = -<span class="number">1</span> &lt;&lt; COUNT_BITS;</span><br><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> SHUTDOWN   =  <span class="number">0</span> &lt;&lt; COUNT_BITS;</span><br><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> STOP       =  <span class="number">1</span> &lt;&lt; COUNT_BITS;</span><br><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> TIDYING    =  <span class="number">2</span> &lt;&lt; COUNT_BITS;</span><br><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> TERMINATED =  <span class="number">3</span> &lt;&lt; COUNT_BITS;</span><br></pre></td></tr></table></figure>
+
+<p>上图是五种状态的数值。例如 当rs &lt; SHUTDOWN，那么表示线程池处于RUNNING状态。</p>
+</li>
+</ul>
+<h3 id="三、构造方法中的重要参数"><a href="#三、构造方法中的重要参数" class="headerlink" title="三、构造方法中的重要参数"></a>三、构造方法中的重要参数</h3><p>根本的构造方法(所有的构造方法最终都会调用到这一个)：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="title">ThreadPoolExecutor</span><span class="params">(<span class="keyword">int</span> corePoolSize,</span></span></span><br><span class="line"><span class="function"><span class="params">                          <span class="keyword">int</span> maximumPoolSize,</span></span></span><br><span class="line"><span class="function"><span class="params">                          <span class="keyword">long</span> keepAliveTime,</span></span></span><br><span class="line"><span class="function"><span class="params">                          TimeUnit unit,</span></span></span><br><span class="line"><span class="function"><span class="params">                          BlockingQueue&lt;Runnable&gt; workQueue,</span></span></span><br><span class="line"><span class="function"><span class="params">                          ThreadFactory threadFactory,</span></span></span><br><span class="line"><span class="function"><span class="params">                          RejectedExecutionHandler handler)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (corePoolSize &lt; <span class="number">0</span> ||</span><br><span class="line">        maximumPoolSize &lt;= <span class="number">0</span> ||</span><br><span class="line">        maximumPoolSize &lt; corePoolSize ||</span><br><span class="line">        keepAliveTime &lt; <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">throw</span> <span class="keyword">new</span> IllegalArgumentException();</span><br><span class="line">    <span class="keyword">if</span> (workQueue == <span class="keyword">null</span> || threadFactory == <span class="keyword">null</span> || handler == <span class="keyword">null</span>)</span><br><span class="line">        <span class="keyword">throw</span> <span class="keyword">new</span> NullPointerException();</span><br><span class="line">    <span class="keyword">this</span>.acc = System.getSecurityManager() == <span class="keyword">null</span> ?</span><br><span class="line">            <span class="keyword">null</span> :</span><br><span class="line">            AccessController.getContext();</span><br><span class="line">    <span class="keyword">this</span>.corePoolSize = corePoolSize;</span><br><span class="line">    <span class="keyword">this</span>.maximumPoolSize = maximumPoolSize;</span><br><span class="line">    <span class="keyword">this</span>.workQueue = workQueue;</span><br><span class="line">    <span class="keyword">this</span>.keepAliveTime = unit.toNanos(keepAliveTime);</span><br><span class="line">    <span class="keyword">this</span>.threadFactory = threadFactory;</span><br><span class="line">    <span class="keyword">this</span>.handler = handler;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li><p><strong>corePoolSize</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">volatile</span> <span class="keyword">int</span> corePoolSize;</span><br></pre></td></tr></table></figure>
+
+<p>表示线程池中一直存活着的线程的最小数量，也被称作核心线程。<strong>默认情况</strong>下，核心线程是按照需要创建并启动的，也就是说，<strong>只有当线程池接收到我们提交给他的任务后，他才会创建并启动一定数量的核心线程来执行这些任务。</strong>也可以通过prestartCoreThread()或者prestartAllCoreThreads()方法是的新任务还未提交时线程池就已经创建并启动课一个或所有的核心线程。</p>
+</li>
+<li><p><strong>maximumPoolSize</strong></p>
+<p>maximumPoolSize 表示线程池内能够容纳线程数量的最大值。但是不能超过常量CAPACITY的数值大小。</p>
+<p>当通过execute(Runnable)方法提交一个任务到线程池时，如果线程池处于运行状态(RUNNING)的线程数量少于核心线程数(corePoolSize)，<strong>那么即使有一些非核心线程处于空现状态，系统也会倾向于创建一个新的线程来执行任务</strong>。如果此时处于运行状态(RUNNING)的线程数量大于核心线程数(corePoolSize), 但又小于最大线程数(maximumPoolSize), 那么系统将会去判断线程池内部的阻塞队列 workQueue 中是否还有空位子. 如果发现有空位子, 系统就会将该任务先存入该阻塞队列； 如果发现队列中已没有空位子(即: 队列已满), 系统就会新创建一个线程来执行该任务；如果corePoolSize ==  maximumPoolSize，则该线程池容量是固定的。</p>
+</li>
+<li><p><strong>keepAliveTime</strong></p>
+<p>keepAliveTime表示空闲线程处于等待状态的超市时间(超过该时间线程停止工作)。当总线程数大于corePoolSize且<strong>allowCoreThreadTimeOut为false</strong>时，这些多出来的非核心线程一旦进入空闲状态就开始计算各自的等待时间，一旦等待时间超过keepAliveTime，该线程就会停止工作(terminated)，<strong>而核心线程不会受超时时间的限制。</strong>但是如果<strong>allowCoreThreadTimeOut为true，则核心线程也会收到限制。</strong></p>
+</li>
+<li><p><strong>workQueue</strong></p>
+<p>阻塞队列<strong>(<code>BlockingQueue&lt;Runnable&gt;</code>)</strong>。基于”生产者-消费者”模型。队列对新提交的任务的三种处理策略：</p>
+<ul>
+<li><p><strong>直接切换</strong></p>
+<p>常用的队列是<strong>SynchronousQueue(同步队列)</strong>。这种队列内部不会存储元素，每一次插入操作都会先进入阻塞状态，直到另一个线程执行了删除操作，然后插入操作才会执行。同样的每一次删除操作也会等待插入操作的执行完毕。当提交一个任务到使用这种阻塞队列的线程池后，线程池会检测是否有可用的空间线程来执行该任务，如果没有就直接创建一个线程而不是将该任务放到阻塞队列中。<strong>这种策略的目的是让每一个提交的任务都能得到立即执行。这要求线程池的最大值是线程池允许的最大值Integer.MAX_VALUE。</strong>静态工厂方法<strong>Executors.newCachedThreadPool()</strong>使用这种队列。</p>
+</li>
+<li><p><strong>无界队列</strong></p>
+<p>如基于链表的阻塞队列<strong>LinkedBlockingQueue</strong>。这种情况下<strong>maximumPoolSize</strong>起不到作用，因为当线程数大于corePoolSize时总会向无界队列中添加新的线程，直到达到线程池所允许的最大值。静态工厂方法<strong>Executors.newFixedThreadPool()</strong>使用这种队列</p>
+</li>
+<li><p><strong>有界队列</strong></p>
+<p>如<strong>ArrayBlockingQueue</strong>。可以将线程池最大的线程数maximumPoolSize限定在某个值以内，并通过队列来降低资源的消耗。</p>
+</li>
+</ul>
+</li>
+<li><p><strong>threadFactory</strong></p>
+<p>线程工厂，用于创建线程。如果在创建线程池的时候没有指定threadFactory参数，则默认使用<strong>Executors.defaultThreadFactory()</strong>方法创建线程工厂。如果想为线程工厂设置参数如名字、优先级那么就需要自己去实现ThreadFactory接口，并实现其抽象方法<strong>newThread()</strong>。</p>
+</li>
+<li><p><strong>handler</strong></p>
+<p>线程池拒绝策略。以下条件满足其中一个就会触发拒绝策略。</p>
+<ul>
+<li>线程池处于SHUTDOWN状态(不论线程池和阻塞队列是否已满)。</li>
+<li>线程池所有的线程处于运行状态且线程池中的阻塞队列已满。</li>
+</ul>
+<p>拒绝策略的方式:</p>
+<ol>
+<li><p><strong>AbortPolicy</strong></p>
+<p>抛出异常</p>
+</li>
+<li><p><strong>CallerRunsPolicy</strong></p>
+<p>将新提交的任务放到ThreadPoolExecutor.execute()方法所在的线程中执行</p>
+</li>
+<li><p><strong>DiscardPolicy</strong></p>
+<p>不执行新提交的任务</p>
+</li>
+<li><p><strong>DiscardOldestPolicy</strong></p>
+<ul>
+<li>当线程已关闭就不执行这个任务，和DiscardPolicy策略一样</li>
+<li>当线程未关闭，会将阻塞队列中处于队首(head)的那个任务从队列中移除，然后再将这个新提交的任务加入到该阻塞队列的队尾(tail)执行。</li>
+</ul>
+</li>
+</ol>
+</li>
+</ol>
+<h3 id="四、线程池进行任务调度的原理"><a href="#四、线程池进行任务调度的原理" class="headerlink" title="四、线程池进行任务调度的原理"></a>四、线程池进行任务调度的原理</h3><p>向线程池提交一个任务，可以通过调用 <strong>execute()</strong> 或 <strong>submit()</strong>方法来实现， 而二者的区别是， execute()方法只能进行任务的提交而不能获取该任务执行的结果,，但 submit()方法则既能进行任务的提交，又能获取该任务执行的结果。submit的底层实际上封装了execute()，submit()的返回值类型是<strong>Future</strong>。</p>
+<ul>
+<li><p><strong>execute()</strong>源码</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">execute</span><span class="params">(Runnable command)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (command == <span class="keyword">null</span>)</span><br><span class="line">        <span class="keyword">throw</span> <span class="keyword">new</span> NullPointerException();</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">     *整个过程分三种情况</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="comment">// 获取ctl的值</span></span><br><span class="line">    <span class="keyword">int</span> c = ctl.get();</span><br><span class="line">  	<span class="comment">/** 第一种情况 */</span></span><br><span class="line">  	<span class="comment">//根据ctl的值得到当前线程池有效的线程数workerCountOf(c)</span></span><br><span class="line">    <span class="keyword">if</span> (workerCountOf(c) &lt; corePoolSize) &#123;</span><br><span class="line">      	</span><br><span class="line">        <span class="comment">//如果当前线程池有效线程数小于核心线程池 调用addWork方法 将当前的线程传入</span></span><br><span class="line">      	<span class="comment">//并创建一个线程来执行任务</span></span><br><span class="line">        <span class="keyword">if</span> (addWorker(command, <span class="keyword">true</span>))</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">      	<span class="comment">//重新得到ctl的值</span></span><br><span class="line">        c = ctl.get();</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">  	<span class="comment">/** 不满足上述条件的情况:</span></span><br><span class="line"><span class="comment">  	 * 1、线程池的核心线程数大于已设定核心线程数的上限</span></span><br><span class="line"><span class="comment">  	 * 2、addWorker(command, true)方法执行为false</span></span><br><span class="line"><span class="comment">  	 * 判断是否进入第二种情况</span></span><br><span class="line"><span class="comment">  	 */</span></span><br><span class="line">  </span><br><span class="line">  	<span class="comment">//如果线程池处于RUNNING状态，线程池阻塞队列workQueue未满 将提交的任务加入到阻塞队列		    workQueue.offer(command) 否则进入最后一种情况</span></span><br><span class="line">    <span class="keyword">if</span> (isRunning(c) &amp;&amp; workQueue.offer(command)) &#123;</span><br><span class="line">      	<span class="comment">//再次获取ctl的值  因为整个过程是并发执行 所以需要经常获取当前的ctl值</span></span><br><span class="line">        <span class="keyword">int</span> recheck = ctl.get();</span><br><span class="line">      	<span class="comment">//再次判断线程池是否处于运行状态，如果不是则将先前添加的任务取出</span></span><br><span class="line">        <span class="keyword">if</span> (! isRunning(recheck) &amp;&amp; remove(command))</span><br><span class="line">          	<span class="comment">//一旦移除成功则调用拒绝方法</span></span><br><span class="line">            reject(command);</span><br><span class="line">      	<span class="comment">//计算线程池内的有效线程数是否等于0</span></span><br><span class="line">        <span class="keyword">else</span> <span class="keyword">if</span> (workerCountOf(recheck) == <span class="number">0</span>)</span><br><span class="line">          	<span class="comment">//如果是则创建一个线程但不去启动它，并结束整个execute()方法的执行。本质是最后在runWorker类中执行的null值最后被传到了runWorker类中 而false在addWorker类中被处理  表示将当前的线程池的有效线程是core还是max</span></span><br><span class="line">            addWorker(<span class="keyword">null</span>, <span class="keyword">false</span>);</span><br><span class="line">    &#125;</span><br><span class="line">  </span><br><span class="line">  	<span class="comment">/**</span></span><br><span class="line"><span class="comment">  	 * 最后判断是否执行第三种情况</span></span><br><span class="line"><span class="comment">     * 条件:</span></span><br><span class="line"><span class="comment">     * 1、线程池不处于RUNNING状态</span></span><br><span class="line"><span class="comment">     * 2、线程池处于RUNNING状态但是线程池内的有效线程数已经达到corePoolSize并且阻塞队列已满</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">  	<span class="comment">//尝试创建一个新的线程来执行任务 如果失败了那么就执行reject(command)方法拒绝</span></span><br><span class="line">    <span class="keyword">else</span> <span class="keyword">if</span> (!addWorker(command, <span class="keyword">false</span>))</span><br><span class="line">        reject(command);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中添加到阻塞队列的方法<strong>workQueue.offer(command)</strong>底层调用的是一个BlockingQueue的数据结构，将任务添加到队列的尾部。这里以ArrayBlockingQueue实现的代码为例。最终的调用👇</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">enqueue</span><span class="params">(E x)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// assert lock.getHoldCount() == 1;</span></span><br><span class="line">    <span class="comment">// assert items[putIndex] == null;</span></span><br><span class="line">    <span class="keyword">final</span> Object[] items = <span class="keyword">this</span>.items;</span><br><span class="line">    items[putIndex] = x;</span><br><span class="line">    <span class="keyword">if</span> (++putIndex == items.length)</span><br><span class="line">        putIndex = <span class="number">0</span>;</span><br><span class="line">    count++;</span><br><span class="line">    notEmpty.signal();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>核心方法<strong><code>addWorker(Runnable firstTask, boolean core)</code></strong>分析</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">boolean</span> <span class="title">addWorker</span><span class="params">(Runnable firstTask, <span class="keyword">boolean</span> core)</span> </span>&#123;</span><br><span class="line">  	<span class="comment">/**</span></span><br><span class="line"><span class="comment">  	 * 无限循环。当线程池处于RUNNING状态时，只有线程池中的有效线程数成功 加1 后</span></span><br><span class="line"><span class="comment">  	 * 才会退出循环执行后边的代码。即:当前线程池的有效线程数一定</span></span><br><span class="line"><span class="comment">  	 * 小于corePoolSize或maximumPoolSize</span></span><br><span class="line"><span class="comment">  	 */</span></span><br><span class="line">    retry:</span><br><span class="line">    <span class="keyword">for</span> (;;) &#123;</span><br><span class="line">        <span class="keyword">int</span> c = ctl.get();</span><br><span class="line">        <span class="keyword">int</span> rs = runStateOf(c);</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Check if queue empty only if necessary.</span></span><br><span class="line">        <span class="comment">//线程池处于STOP或者TERMINATD或者TYDING状态 并且要满足以下三种条件之一:</span></span><br><span class="line">        <span class="comment">//1、rs不是SHUTDOWN状态或者</span></span><br><span class="line">        <span class="comment">//2、firstTask不是null或者</span></span><br><span class="line">        <span class="comment">//3、阻塞队列workQueue为空  那么直接结束该方法</span></span><br><span class="line">        <span class="keyword">if</span> (rs &gt;= SHUTDOWN &amp;&amp;</span><br><span class="line">            ! (rs == SHUTDOWN &amp;&amp;</span><br><span class="line">               firstTask == <span class="keyword">null</span> &amp;&amp;</span><br><span class="line">               ! workQueue.isEmpty()))</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (;;) &#123;</span><br><span class="line">            <span class="keyword">int</span> wc = workerCountOf(c);</span><br><span class="line">          	<span class="comment">//如果线程池的有效容量大于等于理论最大容量或者大于设定的最大容量 </span></span><br><span class="line">            <span class="comment">//那么也会直接退出方法</span></span><br><span class="line">            <span class="keyword">if</span> (wc &gt;= CAPACITY ||</span><br><span class="line">                <span class="comment">//根据传入的core是true还是false来给判断最大容量是core还是maximum</span></span><br><span class="line">                wc &gt;= (core ? corePoolSize : maximumPoolSize))</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">          	<span class="comment">//有效线程数加1 退出循环</span></span><br><span class="line">            <span class="keyword">if</span> (compareAndIncrementWorkerCount(c))</span><br><span class="line">                <span class="keyword">break</span> retry;</span><br><span class="line">            c = ctl.get();  <span class="comment">// Re-read ctl</span></span><br><span class="line">            <span class="keyword">if</span> (runStateOf(c) != rs)</span><br><span class="line">                <span class="keyword">continue</span> retry;</span><br><span class="line">            <span class="comment">// else CAS failed due to workerCount change; retry inner loop</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">boolean</span> workerStarted = <span class="keyword">false</span>;</span><br><span class="line">    <span class="keyword">boolean</span> workerAdded = <span class="keyword">false</span>;</span><br><span class="line">    Worker w = <span class="keyword">null</span>;</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="comment">//根据传入的任务创建线程Worker对象w</span></span><br><span class="line">        w = <span class="keyword">new</span> Worker(firstTask);</span><br><span class="line">        <span class="keyword">final</span> Thread t = w.thread;</span><br><span class="line">        <span class="keyword">if</span> (t != <span class="keyword">null</span>) &#123;</span><br><span class="line">            <span class="keyword">final</span> ReentrantLock mainLock = <span class="keyword">this</span>.mainLock;</span><br><span class="line">            <span class="comment">//加锁</span></span><br><span class="line">            mainLock.lock();</span><br><span class="line">            <span class="keyword">try</span> &#123;</span><br><span class="line">                <span class="comment">// Recheck while holding lock.</span></span><br><span class="line">                <span class="comment">// Back out on ThreadFactory failure or if</span></span><br><span class="line">                <span class="comment">// shut down before lock acquired.</span></span><br><span class="line">                <span class="keyword">int</span> rs = runStateOf(ctl.get());</span><br><span class="line">								<span class="comment">//判断当前线程池状态 如果是运行的或者是关闭的并且firstTask为null</span></span><br><span class="line">                <span class="keyword">if</span> (rs &lt; SHUTDOWN ||</span><br><span class="line">                    (rs == SHUTDOWN &amp;&amp; firstTask == <span class="keyword">null</span>)) &#123;</span><br><span class="line">                    <span class="keyword">if</span> (t.isAlive()) <span class="comment">// precheck that t is startable</span></span><br><span class="line">                        <span class="keyword">throw</span> <span class="keyword">new</span> IllegalThreadStateException();</span><br><span class="line">                    <span class="comment">//将Worker对象放入一个HashSet对象workers中 workers中包含了当前线程池的所有工作线程</span></span><br><span class="line">                    workers.add(w);</span><br><span class="line">                    <span class="keyword">int</span> s = workers.size();</span><br><span class="line">                    <span class="keyword">if</span> (s &gt; largestPoolSize)</span><br><span class="line">                        <span class="comment">//线程池的最大容量</span></span><br><span class="line">                        largestPoolSize = s;</span><br><span class="line">                    workerAdded = <span class="keyword">true</span>;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">                mainLock.unlock();</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> (workerAdded) &#123;</span><br><span class="line">              <span class="comment">//线程添加成功后就会启动  会调用到Worker对象中的run()方法</span></span><br><span class="line">                t.start();</span><br><span class="line">                workerStarted = <span class="keyword">true</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (! workerStarted)</span><br><span class="line">            addWorkerFailed(w);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> workerStarted;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中Worker类是ThreadPoolExecutor的一个内部类，实现了Runnable接口。源码如下:</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="class"><span class="keyword">class</span> <span class="title">Worker</span></span></span><br><span class="line"><span class="class">    <span class="keyword">extends</span> <span class="title">AbstractQueuedSynchronizer</span></span></span><br><span class="line"><span class="class">    <span class="keyword">implements</span> <span class="title">Runnable</span></span></span><br><span class="line"><span class="class"></span>&#123;</span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 声明序列化ID只是为了不出现javac警告 其实没什么用</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">long</span> serialVersionUID = <span class="number">6138294804551838833L</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/** Thread this worker is running in.  Null if factory fails. */</span></span><br><span class="line">    <span class="keyword">final</span> Thread thread;</span><br><span class="line">    <span class="comment">/** Initial task to run.  Possibly null. */</span></span><br><span class="line">    Runnable firstTask;</span><br><span class="line">    <span class="comment">/** Per-thread task counter */</span></span><br><span class="line">    <span class="keyword">volatile</span> <span class="keyword">long</span> completedTasks;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Creates with given first task and thread from ThreadFactory.</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> firstTask the first task (null if none)</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    Worker(Runnable firstTask) &#123;</span><br><span class="line">        setState(-<span class="number">1</span>); <span class="comment">// inhibit interrupts until runWorker</span></span><br><span class="line">        <span class="keyword">this</span>.firstTask = firstTask;</span><br><span class="line">        <span class="keyword">this</span>.thread = getThreadFactory().newThread(<span class="keyword">this</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/** 将主要的运行工作交给外部方法runWorker(Worker w)  */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">run</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        runWorker(<span class="keyword">this</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Lock methods</span></span><br><span class="line">    <span class="comment">// 获取当前锁的状态</span></span><br><span class="line">    <span class="comment">// The value 0 represents the unlocked state.</span></span><br><span class="line">    <span class="comment">// The value 1 represents the locked state.</span></span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">protected</span> <span class="keyword">boolean</span> <span class="title">isHeldExclusively</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> getState() != <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">protected</span> <span class="keyword">boolean</span> <span class="title">tryAcquire</span><span class="params">(<span class="keyword">int</span> unused)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (compareAndSetState(<span class="number">0</span>, <span class="number">1</span>)) &#123;</span><br><span class="line">            setExclusiveOwnerThread(Thread.currentThread());</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">true</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">protected</span> <span class="keyword">boolean</span> <span class="title">tryRelease</span><span class="params">(<span class="keyword">int</span> unused)</span> </span>&#123;</span><br><span class="line">        setExclusiveOwnerThread(<span class="keyword">null</span>);</span><br><span class="line">        setState(<span class="number">0</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">lock</span><span class="params">()</span>        </span>&#123; acquire(<span class="number">1</span>); &#125;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">boolean</span> <span class="title">tryLock</span><span class="params">()</span>  </span>&#123; <span class="keyword">return</span> tryAcquire(<span class="number">1</span>); &#125;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">unlock</span><span class="params">()</span>      </span>&#123; release(<span class="number">1</span>); &#125;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">boolean</span> <span class="title">isLocked</span><span class="params">()</span> </span>&#123; <span class="keyword">return</span> isHeldExclusively(); &#125;</span><br><span class="line">    ... ...</span><br><span class="line">    ... ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>真正执行线程方法的runWorker(Worker w)方法:</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">final</span> <span class="keyword">void</span> <span class="title">runWorker</span><span class="params">(Worker w)</span> </span>&#123;</span><br><span class="line">    Thread wt = Thread.currentThread();</span><br><span class="line">    <span class="comment">//将firstTask赋值给task  firstTask就是最开始execute方法执行的工作</span></span><br><span class="line">    Runnable task = w.firstTask;</span><br><span class="line">    w.firstTask = <span class="keyword">null</span>;</span><br><span class="line">    w.unlock(); <span class="comment">// allow interrupts</span></span><br><span class="line">    <span class="keyword">boolean</span> completedAbruptly = <span class="keyword">true</span>;</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">      	<span class="comment">//如果task不为null 就会或者getTask()方法中取出的线程不是null</span></span><br><span class="line">      	<span class="comment">//getTask()方法是一个不断从workQueue中取出线程的方法</span></span><br><span class="line">        <span class="keyword">while</span> (task != <span class="keyword">null</span> || (task = getTask()) != <span class="keyword">null</span>) &#123;</span><br><span class="line">            w.lock();</span><br><span class="line">            <span class="comment">// If pool is stopping, ensure thread is interrupted;</span></span><br><span class="line">            <span class="comment">// if not, ensure thread is not interrupted.  This</span></span><br><span class="line">            <span class="comment">// requires a recheck in second case to deal with</span></span><br><span class="line">            <span class="comment">// shutdownNow race while clearing interrupt</span></span><br><span class="line">            <span class="keyword">if</span> ((runStateAtLeast(ctl.get(), STOP) ||</span><br><span class="line">                 (Thread.interrupted() &amp;&amp;</span><br><span class="line">                  runStateAtLeast(ctl.get(), STOP))) &amp;&amp;</span><br><span class="line">                !wt.isInterrupted())</span><br><span class="line">                wt.interrupt();</span><br><span class="line">            <span class="keyword">try</span> &#123;</span><br><span class="line">                beforeExecute(wt, task);</span><br><span class="line">                Throwable thrown = <span class="keyword">null</span>;</span><br><span class="line">                <span class="keyword">try</span> &#123;</span><br><span class="line">                  	<span class="comment">//执行任务</span></span><br><span class="line">                    task.run();</span><br><span class="line">                &#125; <span class="keyword">catch</span> (RuntimeException x) &#123;</span><br><span class="line">                    thrown = x; <span class="keyword">throw</span> x;</span><br><span class="line">                &#125; <span class="keyword">catch</span> (Error x) &#123;</span><br><span class="line">                    thrown = x; <span class="keyword">throw</span> x;</span><br><span class="line">                &#125; <span class="keyword">catch</span> (Throwable x) &#123;</span><br><span class="line">                    thrown = x; <span class="keyword">throw</span> <span class="keyword">new</span> Error(x);</span><br><span class="line">                &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">                    afterExecute(task, thrown);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">              	<span class="comment">//执行完一次task后设置为null  这样再执行task就只能根据第二个条件task = getTask()判断 即只能从阻塞队列中取出</span></span><br><span class="line">                task = <span class="keyword">null</span>;</span><br><span class="line">                w.completedTasks++;</span><br><span class="line">                w.unlock();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        completedAbruptly = <span class="keyword">false</span>;</span><br><span class="line">    &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">        processWorkerExit(w, completedAbruptly);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>分析上图第11行代码: 当execute方法执行第三种策略时，即只创建一个线程并不执行。在这里就被处理，因为在第三种情况下传入的null值，这是只能就会走第二种判断条件<strong>task = getTask()</strong> 从阻塞队列中取出任务来执行。 </p>
+<p>getTask的源码如下:</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> Runnable <span class="title">getTask</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">boolean</span> timedOut = <span class="keyword">false</span>; <span class="comment">// Did the last poll() time out?</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> (;;) &#123;</span><br><span class="line">        <span class="keyword">int</span> c = ctl.get();</span><br><span class="line">        <span class="keyword">int</span> rs = runStateOf(c);</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Check if queue empty only if necessary.</span></span><br><span class="line">      	<span class="comment">//线程池是否被关闭        							队列是否为空</span></span><br><span class="line">        <span class="keyword">if</span> (rs &gt;= SHUTDOWN &amp;&amp; (rs &gt;= STOP || workQueue.isEmpty())) &#123;</span><br><span class="line">            decrementWorkerCount();</span><br><span class="line">          	<span class="comment">//如果是返回null</span></span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">int</span> wc = workerCountOf(c);</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Are workers subject to culling?</span></span><br><span class="line">      <span class="comment">//allowCoreThreadTimeOut表示核心线程是否也受超时机制限制 如果没有开启则再判断正在运行的线程数是否超过了最大核心线程数 如果超过了 timed也要被设为false</span></span><br><span class="line">        <span class="keyword">boolean</span> timed = allowCoreThreadTimeOut || wc &gt; corePoolSize;</span><br><span class="line"></span><br><span class="line">      	<span class="comment">//如果当前的工作线程数已经大于最大线程数 核心线程收到超时机制的限制</span></span><br><span class="line">        <span class="keyword">if</span> ((wc &gt; maximumPoolSize || (timed &amp;&amp; timedOut))</span><br><span class="line">            &amp;&amp; (wc &gt; <span class="number">1</span> || workQueue.isEmpty())) &#123;</span><br><span class="line">            <span class="keyword">if</span> (compareAndDecrementWorkerCount(c))</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">          <span class="comment">//从阻塞队列取出任务</span></span><br><span class="line">            Runnable r = timed ?</span><br><span class="line">                workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :</span><br><span class="line">                workQueue.take();</span><br><span class="line">            <span class="keyword">if</span> (r != <span class="keyword">null</span>)</span><br><span class="line">              <span class="comment">//如果阻塞队列不为空或者未超时 返回r</span></span><br><span class="line">                <span class="keyword">return</span> r;</span><br><span class="line">            timedOut = <span class="keyword">true</span>;</span><br><span class="line">        &#125; <span class="keyword">catch</span> (InterruptedException retry) &#123;</span><br><span class="line">            timedOut = <span class="keyword">false</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ul>
+<h3 id="五、线程池的关闭"><a href="#五、线程池的关闭" class="headerlink" title="五、线程池的关闭"></a>五、线程池的关闭</h3><p>线程池有两种关闭方式:shutdown和shutdownNow</p>
+<ul>
+<li><p><strong>shutdown()</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">shutdown</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">final</span> ReentrantLock mainLock = <span class="keyword">this</span>.mainLock;</span><br><span class="line">    mainLock.lock();</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        checkShutdownAccess();</span><br><span class="line">      <span class="comment">//将线程池的状态变为SHUTDOWN状态</span></span><br><span class="line">        advanceRunState(SHUTDOWN);</span><br><span class="line">        interruptIdleWorkers();</span><br><span class="line">        onShutdown(); <span class="comment">// hook for ScheduledThreadPoolExecutor</span></span><br><span class="line">    &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">        mainLock.unlock();</span><br><span class="line">    &#125;</span><br><span class="line">    tryTerminate();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用该方法会将线程池的状态变为SHUTDOWN状态，此时不能再向线程池中添加任务，否则将会抛出<strong>RejectedExecutionException</strong>异常。但是<strong>线程池要等待池内所有任务结束之后</strong>才会退出。</p>
+</li>
+<li><p><strong>shutdownNow</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> List&lt;Runnable&gt; <span class="title">shutdownNow</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    List&lt;Runnable&gt; tasks;</span><br><span class="line">    <span class="keyword">final</span> ReentrantLock mainLock = <span class="keyword">this</span>.mainLock;</span><br><span class="line">    mainLock.lock();</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        checkShutdownAccess();</span><br><span class="line">      <span class="comment">//将线程池的状态设置为STOP</span></span><br><span class="line">        advanceRunState(STOP);</span><br><span class="line">        interruptWorkers();</span><br><span class="line">        tasks = drainQueue();</span><br><span class="line">    &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">        mainLock.unlock();</span><br><span class="line">    &#125;</span><br><span class="line">    tryTerminate();</span><br><span class="line">    <span class="keyword">return</span> tasks;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用该方法后线程池立即结束，并且停止正在执行的任务，不再执行线程池中的还在等待的任务。</p>
+<p>其中<code>interruptWorkers()</code>方法的实现如下:</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">interruptWorkers</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">final</span> ReentrantLock mainLock = <span class="keyword">this</span>.mainLock;</span><br><span class="line">    mainLock.lock();</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="keyword">for</span> (Worker w : workers)</span><br><span class="line">          <span class="comment">//每一个任务最中会调用interrupt()方法中断线程</span></span><br><span class="line">            w.interruptIfStarted();</span><br><span class="line">    &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">        mainLock.unlock();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ul>
+
+          
+        
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/04/21/SQL%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+                
+                <a class="post-title-link" href="/2019/04/21/SQL%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/" itemprop="url">SQL优化总结</a></h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-04-21T13:53:35+08:00">
+                2019-04-21
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <h3 id="EXPLAIN执行计划分析SQL"><a href="#EXPLAIN执行计划分析SQL" class="headerlink" title="EXPLAIN执行计划分析SQL"></a>EXPLAIN执行计划分析SQL</h3><h4 id="一、EXPLAIN信息详解"><a href="#一、EXPLAIN信息详解" class="headerlink" title="一、EXPLAIN信息详解"></a>一、EXPLAIN信息详解</h4><p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/database/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-04-26%20%E4%B8%8A%E5%8D%8811.25.58.png" alt=""></p>
+<h5 id="字段解释"><a href="#字段解释" class="headerlink" title="字段解释"></a>字段解释</h5><ul>
+<li><p><strong>id</strong></p>
+<p>表示执行查找或操作表的顺序。在执行操作的时候会出现以下三种情况</p>
+<ol>
+<li><p>id值相同 执行的顺序为由上至下</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/database/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-04-26%20%E4%B8%8B%E5%8D%882.39.25.png" alt=""></p>
+</li>
+<li><p>id值不同，则id值越大的越先被执行</p>
+</li>
+<li><p>id值有的相同有的不同，这种情况下id值相同的从上向下进行，id不同的id值越大优先级越高</p>
+</li>
+</ol>
+</li>
+<li><p><strong>select_type</strong></p>
+<p>查询的类型，用于区分普通查询、联合查询、子查询等复杂查询。包括一下类型:</p>
+<ul>
+<li><strong>SIMPLE:</strong> 简单的select查询，查询中不包含子查询或者union</li>
+<li><strong>PRIMARY:</strong> 查询中包含很多复杂的子部分，最外层的查询就被标记为primary</li>
+<li><strong>SUBQUERY:</strong> 在select或where列表中包含了子查询</li>
+<li><strong>DERIVED:</strong> 在<strong><em>FROM</em></strong>列表中包含的子查询被标记为derived</li>
+<li><strong>UNION:</strong> 如果第二个select出现在union之后，则被标记为union；如果union包含在from子句的子查询中，则外层select被标记为derived</li>
+<li><strong>UNION RESULT:</strong> 从union表获取结果的select</li>
+</ul>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/database/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-04-26%20%E4%B8%8B%E5%8D%889.22.59.png" alt=""></p>
+</li>
+<li><p><strong>type</strong></p>
+<p>访问类型。SQL查询优化的重要指标，结果从好到坏依次是：</p>
+<p><strong>system</strong> &gt; <strong>const</strong> &gt; <strong>eq_ref</strong> &gt; <strong>ref</strong> &gt; fulltext &gt; ref_or_null &gt; index_merge &gt; unique_subquery &gt; index_subquery &gt; <strong>range</strong> &gt; <strong>index</strong> &gt; <strong>ALL</strong></p>
+<p><strong>一般来说，好的sql查询至少达到range级别，最好能达到ref</strong></p>
+<ul>
+<li><p><strong>system</strong></p>
+<p>表只有一行记录(等于系统表)，是<strong>const</strong>类型的特例，一般不会出现</p>
+</li>
+<li><p><strong>const</strong></p>
+<p>表示通过索引一次就找到了，const用于比较<strong>primary key</strong>或者<strong>unique</strong>索引。因为只需要匹配一行数据所以很快。如果将主键置于where列表中，mysql就能将该查询转换成一个const</p>
+</li>
+<li><p><strong>eq_ref</strong></p>
+<p>唯一性索引扫描，<strong>对于每个索引键，表中只有一条记录与之匹配。</strong>常见于主键索引或者唯一索引。</p>
+</li>
+<li><p><strong>ref</strong></p>
+<p>非唯一性索引扫描，返回匹配某个单独值的所有行。</p>
+</li>
+<li><p><strong>range</strong></p>
+<p>只检索给定范围的行，使用一个索引来选择行。key列显示使用了哪个索引。一般就是在where语句中出现了<strong>between、&lt;、&gt;、in</strong>的查询。比全表扫面好。</p>
+</li>
+<li><p><strong>index</strong></p>
+<p>表示遍历扫描索引树，读全表，但是是从索引中读取所以比<strong>ALL</strong>快。</p>
+</li>
+<li><p><strong>ALL</strong></p>
+<p>遍历全表。读硬盘。慢。</p>
+</li>
+</ul>
+</li>
+<li><p><strong>possible_keys</strong></p>
+<p>列出查询涉及到的字段上存在的索引，但是<strong>该索引不一定在实际的查询中被使用</strong>。</p>
+</li>
+<li><p><strong>key</strong></p>
+<p><strong>实际</strong>使用的索引，如果为NULL，则表示没有使用索引。</p>
+</li>
+<li><p><strong>key_len</strong></p>
+<p>表示索引的最大的可能字节数，<strong>并不是实际使用索引的字节数</strong>。长度越短越好。</p>
+</li>
+<li><p><strong>ref</strong></p>
+<p>显示索引的哪一列被使用了，可能是一个常量const。</p>
+</li>
+<li><p><strong>rows</strong></p>
+<p>根据表统计信息及索引的选用情况，大致估算出找到所需记录需要读取的行数。</p>
+</li>
+<li><p>Extra</p>
+<p>不在其他字段中显示，但是比较重要的额外信息</p>
+</li>
+</ul>
+<h3 id="Mysql分页查询优化"><a href="#Mysql分页查询优化" class="headerlink" title="Mysql分页查询优化"></a>Mysql分页查询优化</h3><ul>
+<li><p><strong>常规操作</strong></p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> * <span class="keyword">FROM</span> <span class="keyword">table</span> <span class="keyword">LIMIT</span> <span class="keyword">start</span>, <span class="keyword">num</span>;</span><br></pre></td></tr></table></figure>
+
+<p>这种情况是用不到索引的，所以在查询大量数据的时候速度极慢。</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/database/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-04-28%20%E4%B8%8A%E5%8D%8810.23.36.png" alt=""></p>
+</li>
+<li><p><strong>常用分页方式</strong></p>
+<p>对于数据量不是特别大的表</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT * FROM table WHERE ... ORDER BY ...(索引) LIMIT start, num;</span><br></pre></td></tr></table></figure>
+
+<p>这种情况会用到ORDER BY的索引</p>
+</li>
+<li><p><strong>子查询分页方式</strong></p>
+<p>数据量特别庞大，如果 LIMTIT的起始页数很大 如<strong>LIMIT 100000, 10</strong> 这时定位到100000就很慢。这时可以用子查询的方式来解决。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT * FROM table WHERE id &gt; (SELECT id FROM table WHERE user_id &#x3D; ... ORDER BY id LIMIT 100000, 1) LIMIT 10;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p><strong>JOIN分页</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SELECT * FROM table1 as t1 JOIN (SELECT id FROM table1 ORDER BY id LIMIT 100000, 1) as t2 WHERE t1.id &lt;&#x3D; t2.id ORDER BY t1.id LIMIT 10;</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ul>
+<p>###问题 : MySQL多表联查效率高还是多次单表查询效率高?</p>
+<p>在业务中碰到一个情景，需要结合两张不同的表中查出数据。例如首先要从A表中判断要查的数据id有没有，如果存在则再从B表中查处具体的数据。这时就可以采用问题中所描述的两种方案。</p>
+<p><strong>回答:</strong></p>
+<p>​    使用多次单表查询。原因如下: </p>
+<ol>
+<li><p>不利于写操作。有的操作执行读数据时，会锁住被读的数据，阻塞其他业务对该部分的更新操作。如果采用JOIN涉及多个聚合函数，则相当于同时锁住了多张表，不能进行读写，影响了系统的整体性能。</p>
+<p>(注:有可能会碰到第一步查询时数据量过大的情况，这时或许可以对第一步进行分页查询，然后第二步中从第一步的结果中再去查。)</p>
+</li>
+<li><p>不利于维护。如果业务发生变动，某一张表的字段改了，那么该SQL语句也会失效。即耦合度太高。</p>
+</li>
+</ol>
 
           
         
@@ -350,6 +2773,10 @@
   </section>
 
   
+  <nav class="pagination">
+    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><a class="extend next" rel="next" href="/page/2/">&lt;i class&#x3D;&quot;fa fa-angle-right&quot;&gt;&lt;&#x2F;i&gt;</a>
+  </nav>
+
 
 
           </div>
@@ -393,14 +2820,32 @@
               
                 <a href="/archives/%20%7C%7C%20archive">
               
-                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-count">11</span>
                   <span class="site-state-item-name">日志</span>
                 </a>
               </div>
             
 
             
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">4</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
 
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
             
 
           </nav>

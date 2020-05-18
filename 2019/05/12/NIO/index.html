@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next muse use-motion" lang="zh-Hans">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Java I/O,NIO," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="入门文章 BIO的缺点 BIO就是阻塞I&#x2F;O，在InputStream(读数据)或者OutputStream(写数据)时都有可能阻塞。阻塞后就会失去CPU的使用权，这种下不能承受大规模的访问。应对这种问题解决的方法可以是通过线程池运用多线程，当一个线程出现阻塞时其他线程还可以继续工作。但是当面对一些需要大量Http长连接的情况，服务端需要同时保持几百万的HTTP连接，如淘宝的”旺旺项目”，线程池不">
+<meta property="og:type" content="article">
+<meta property="og:title" content="NIO">
+<meta property="og:url" content="http://yoursite.com/2019/05/12/NIO/index.html">
+<meta property="og:site_name" content="liupf&#39;s blog">
+<meta property="og:description" content="入门文章 BIO的缺点 BIO就是阻塞I&#x2F;O，在InputStream(读数据)或者OutputStream(写数据)时都有可能阻塞。阻塞后就会失去CPU的使用权，这种下不能承受大规模的访问。应对这种问题解决的方法可以是通过线程池运用多线程，当一个线程出现阻塞时其他线程还可以继续工作。但是当面对一些需要大量Http长连接的情况，服务端需要同时保持几百万的HTTP连接，如淘宝的”旺旺项目”，线程池不">
+<meta property="og:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/nio.png">
+<meta property="og:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/niowork.png">
+<meta property="og:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer1.png">
+<meta property="og:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer2.png">
+<meta property="og:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer3.png">
+<meta property="article:published_time" content="2019-05-12T08:41:31.000Z">
+<meta property="article:modified_time" content="2019-05-15T08:47:52.783Z">
+<meta property="article:author" content="liupf">
+<meta property="article:tag" content="Java I&#x2F;O">
+<meta property="article:tag" content="NIO">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/nio.png">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Muse',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2019/05/12/NIO/"/>
+
+
+
+
+
+  <title>NIO | liupf's blog</title>
+  
+
+
+
+
+
+
+
+
+<meta name="generator" content="Hexo 4.2.1"></head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">liupf's blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/%20" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/%20" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/05/12/NIO/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="liupf">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="liupf's blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">NIO</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-05-12T16:41:31+08:00">
+                2019-05-12
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java-I-O/" itemprop="url" rel="index">
+                    <span itemprop="name">Java I/O</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <p><a href="https://www.ibm.com/developerworks/cn/java/j-lo-javaio/index.html" target="_blank" rel="noopener">入门文章</a></p>
+<h4 id="BIO的缺点"><a href="#BIO的缺点" class="headerlink" title="BIO的缺点"></a>BIO的缺点</h4><p> BIO就是阻塞I/O，在InputStream(读数据)或者OutputStream(写数据)时都有可能阻塞。阻塞后就会失去CPU的使用权，这种下不能承受大规模的访问。应对这种问题解决的方法可以是通过线程池运用多线程，当一个线程出现阻塞时其他线程还可以继续工作。但是当面对一些需要大量Http长连接的情况，服务端需要同时保持几百万的HTTP连接，如淘宝的”旺旺项目”，线程池不能同时保持几百万的线程或者无法升级某些用户的优先级，还有<strong>多线程竞争同一资源的同步问题</strong>。</p>
+<h4 id="NIO的工作机制"><a href="#NIO的工作机制" class="headerlink" title="NIO的工作机制"></a>NIO的工作机制</h4><h5 id="NIO类图"><a href="#NIO类图" class="headerlink" title="NIO类图"></a>NIO类图</h5><p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/nio.png" alt=""></p>
+<h5 id="重要的核心概念"><a href="#重要的核心概念" class="headerlink" title="重要的核心概念"></a>重要的核心概念</h5><ul>
+<li><strong>Channel:</strong> 如果拿Socket通信来做类比，socket就是两个点之间的交通工具，而channel更为具体，他表示更为具体的交通工具如高铁、飞机等等。</li>
+<li><strong>Selector:</strong> selector可以比作为一个车站的车辆运行调度系统，它负责监控每辆车的运行状态，是已经出站还是在路上等等，即他可以<strong>轮询</strong>每个channel的状态。</li>
+<li><strong>Buffer:</strong> Buffer类比Stream类更为具体，它可以类比为车上的车坐，如果，channel是高铁，它就表示高铁上的座位，如果channel表示飞机，那么他就是飞机上的座位。而Stream只是抽象的表示一个座位，在你上车之前你并不知道这个车上还有没有座位了，也不知道上的是什么车。这些信息都被封装在Socket中。</li>
+</ul>
+<p>NIO引入了以上的概念，就是想让这些信息具体化，让我们有机会去控制他们，如: 当我们调用write()往SendQ写数据时，当一次写的数据超过SendQ长度，则需要按照SendQ长度进行切割，这个过程需要进行用户态和内核态的切换，而这个切换我们不可以控制。而在Buffer中我们可以控制Buffer的capacity，并且是否扩容以及如何扩容都可以控制。</p>
+<h5 id="NIO工作代码示例"><a href="#NIO工作代码示例" class="headerlink" title="NIO工作代码示例"></a>NIO工作代码示例</h5><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">selector</span><span class="params">()</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        ByteBuffer buffer = ByteBuffer.allocate(<span class="number">1024</span>);</span><br><span class="line">  			<span class="comment">//通过调用Selector的静态工厂创建一个选择器</span></span><br><span class="line">        Selector selector = Selector.open();</span><br><span class="line">  			<span class="comment">//创建一个服务端的Channel</span></span><br><span class="line">        ServerSocketChannel ssc = ServerSocketChannel.open();</span><br><span class="line">  			<span class="comment">//设置为非阻塞方式</span></span><br><span class="line">        ssc.configureBlocking(<span class="keyword">false</span>);</span><br><span class="line">  			<span class="comment">//把channel绑定到一个Socket对象上，</span></span><br><span class="line">        ssc.socket().bind(<span class="keyword">new</span> InetSocketAddress(<span class="number">8080</span>));</span><br><span class="line">  			<span class="comment">//注册监听的事件</span></span><br><span class="line">        ssc.register(selector, SelectionKey.OP_ACCEPT);</span><br><span class="line">        <span class="keyword">while</span> (<span class="keyword">true</span>) &#123;</span><br><span class="line">          	<span class="comment">//取得所有key集合 轮询的来检查已经注册在这个选择器上的所有通信信道是否有需要的事件发生，如果某个事件发生时 将会返回所有的SelectionKey，通过这个对象的channel方法就可以获得这个通信信道对象从而可以读取通信的数据，这里读取的数据是  Buffer  ，这个Buffer是我们可以控制的缓冲器</span></span><br><span class="line">            Set selectedKeys = selector.selectedKeys();</span><br><span class="line">            Iterator it = selectedKeys.iterator();</span><br><span class="line">            <span class="keyword">while</span> (it.hasNext()) &#123;</span><br><span class="line">                SelectionKey key = (SelectionKey) it.next();</span><br><span class="line">                <span class="keyword">if</span> ((key.readyOps() &amp; SelectionKey.OP_ACCEPT) == SelectionKey.OP_ACCEPT) &#123;</span><br><span class="line">                    ServerSocketChannel ssChannel = (ServerSocketChannel) key.channel();</span><br><span class="line">                  	<span class="comment">//接受到服务端的请求</span></span><br><span class="line">                		SocketChannel sc = ssChannel.accept();</span><br><span class="line">                    sc.configureBlocking(<span class="keyword">false</span>);</span><br><span class="line">                    sc.register(selector, SelectionKey.OP_READ);</span><br><span class="line">                    it.remove();</span><br><span class="line">                &#125; <span class="keyword">else</span> <span class="keyword">if</span> </span><br><span class="line">                ((key.readyOps() &amp; SelectionKey.OP_READ) == SelectionKey.OP_READ) &#123;</span><br><span class="line">                    SocketChannel sc = (SocketChannel) key.channel();</span><br><span class="line">                    <span class="keyword">while</span> (<span class="keyword">true</span>) &#123;</span><br><span class="line">                        buffer.clear();</span><br><span class="line">                      	<span class="comment">//读取数据</span></span><br><span class="line">                        <span class="keyword">int</span> n = sc.read(buffer);</span><br><span class="line">                        <span class="keyword">if</span> (n &lt;= <span class="number">0</span>) &#123;</span><br><span class="line">                            <span class="keyword">break</span>;</span><br><span class="line">                        &#125;</span><br><span class="line">                        buffer.flip();</span><br><span class="line">                    &#125;</span><br><span class="line">                    it.remove();</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>上面的代码监听请求的事件和处理请求的事件放在同一个线程中执行，但是在实际的应用中，通常是放在两个线程中，即一个线程负责专门的监听客户端连接请求 而且是以<strong>阻塞方式</strong>进行 另一个线程专门处理请求，这个<strong>处理请求的线程才会真正的采用NIO的方式</strong>。</p>
+<p><strong>基于NIO的Socket请求处理过程</strong></p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/niowork.png" alt=""></p>
+<p><strong>Selector</strong>监听一组通信信道上的I/O状态，前提是这个Selector要已经注册到这些通信信道中。选择器Selector可以调用select()方法检查已经注册的通信信道上是否有I/O已经准备好，如果没有至少一个信道I/O有变化，那么select方法会阻塞等待或在超时时间后返回0。上图中如果多个信道有数据 那么会将这些数据分配到对应数据的Buffer中。所以关键的地方是<strong>有一个线程来处理所有连接的数据交互，每个连接数据交互都不是阻塞方式，所以可以同时处理大量的连接请求。</strong></p>
+<p><strong>Buffer中的参数项</strong></p>
+<table>
+<thead>
+<tr>
+<th align="left"><strong>索引</strong></th>
+<th align="left"><strong>说明</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">capacity</td>
+<td align="left">缓冲区数组的总长度</td>
+</tr>
+<tr>
+<td align="left">position</td>
+<td align="left">下一个要操作的数据元素的位置</td>
+</tr>
+<tr>
+<td align="left">limit</td>
+<td align="left">缓冲区数组中不可操作的下一个元素的位置，limit&lt;=capacity</td>
+</tr>
+<tr>
+<td align="left">mark</td>
+<td align="left">用于记录当前 position 的前一个位置或者默认是 0</td>
+</tr>
+</tbody></table>
+<p>实际操作时，以上参数有如下关系:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer1.png" alt=""></p>
+<p>通过<strong>ByteBuffer.allocate(11)</strong>方法创建一个11个byte的缓冲区，初始状态如上图所示，<strong>position</strong>的位置是0，<strong>capacity</strong>和<strong>limit</strong>的大小都是初始数组的长度，当写入5个字节时位置变化如下:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer2.png" alt=""></p>
+<p>这时如果我们需要将缓冲区这5个字节写入<strong>channel</strong>通信信道，需要调用byteBuffer.filp()方法，数组的状态发生如下变化:</p>
+<p><img src="https://blog-1257300108.cos.ap-beijing.myqcloud.com/IO/buffer3.png" alt=""></p>
+<p>这时操作系统就可以将这5个字节写出去，当下一次使用缓冲区的时候调用一下clear()方法，这些<strong>指针</strong>又回到初始状态。</p>
+<p><strong>mark:</strong> 当我们使用<strong>mark()</strong>时，它将<strong>记录当前position位置的前一个位置，当调用reset时，position将恢复mark记录下的值。</strong></p>
+<blockquote>
+<p><strong>通过 Channel 获取的 I/O 数据首先要经过操作系统的 Socket 缓冲区再将数据复制到 Buffer 中，这个的操作系统缓冲区就是底层的 TCP 协议关联的 RecvQ 或者 SendQ 队列，从操作系统缓冲区到用户缓冲区复制数据比较耗性能，Buffer 提供了另外一种直接操作操作系统缓冲区的的方式即 ByteBuffer.allocateDirector(size)，这个方法返回的 byteBuffer 就是与底层存储空间关联的缓冲区，它的操作方式与 linux2.4 内核的 sendfile 操作方式类似。</strong></p>
+</blockquote>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/Java-I-O/" rel="tag"># Java I/O</a>
+          
+            <a href="/tags/NIO/" rel="tag"># NIO</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2019/05/06/Java-I-O/" rel="next" title="Java I/O">
+                <i class="fa fa-chevron-left"></i> Java I/O
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/05/20/CPU%E7%9A%84%E6%80%81%E5%92%8C%E4%B8%AD%E6%96%AD%E6%9C%BA%E5%88%B6/" rel="prev" title="CPU的态和中断机制">
+                CPU的态和中断机制 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <p class="site-author-name" itemprop="name">liupf</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/%20%7C%7C%20archive">
+              
+                  <span class="site-state-item-count">11</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">4</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-4"><a class="nav-link" href="#BIO的缺点"><span class="nav-number">1.</span> <span class="nav-text">BIO的缺点</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#NIO的工作机制"><span class="nav-number">2.</span> <span class="nav-text">NIO的工作机制</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#NIO类图"><span class="nav-number">2.1.</span> <span class="nav-text">NIO类图</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#重要的核心概念"><span class="nav-number">2.2.</span> <span class="nav-text">重要的核心概念</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#NIO工作代码示例"><span class="nav-number">2.3.</span> <span class="nav-text">NIO工作代码示例</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">liupf</span>
+
+  
+</div>
+
+
+  <div class="powered-by">由 <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a> 强力驱动</div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Muse</a> v5.1.4</div>
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
