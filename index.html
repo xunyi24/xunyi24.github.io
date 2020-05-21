@@ -333,7 +333,8 @@
           
           Redis的动态字符串数据结构扩展了C语言的字符串。Redis数据库中,包含字符串值的键值对在底层都是由SDS实现的。除了用作数据库中字符串的键值对外,SDS还被用作缓冲区:AOF模块中的AOF缓冲区,以及客户端状态中的输入缓冲区等。
 
-一、SDS的定义每一个sds.h/sdshar结构表示一个SD
+一、SDS的定义每一个sds.h/sdshar结构表示一个SDS值:
+1234567891011struct sdshdr&#123;  //记录buf数组中已使用字节的数量  //等于SDS所保存字符串的长度  int len;    //
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -467,7 +468,15 @@
 方式:
 
 固定地址映射
-在编程或者编译时确定逻辑地址和物理地址映射关系。也就是在程序的源代码里面直接指明物理地址或者在编译的时候由编译器
+在编程或者编译时确定逻辑地址和物理地址映射关系。也就是在程序的源代码里面直接指明物理地址或者在编译的时候由编译器帮我们转化成物理地址
+
+特点
+
+程序加载时必须放在指定的内存区域
+因为物理地址是指定的，所以程序必须放在指定的内存区域
+
+容易产生地址冲突,运行失败
+如果多个程序的程序地址是同一个
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -619,7 +628,8 @@
 
 在SpringBoot启动类中有@SpringBootApplication注解。进入该注解看到该类上有@EnableAutoConfiguration注解，这个注解就是SpringBoot自动配置的入口。
 
-@EnableAutoConfiguration利用选择器@AutoCon
+@EnableAutoConfiguration利用选择器@AutoConfigurationImportSelector.class给容器导入一些组件
+1234567891011121314@Target(&#123;ElementType.TYPE&
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -775,7 +785,11 @@
 
 周转时间:
 ​    进程提交给计算机到最后完成所花费的时间(t)
-​    t = tc - ts   ts:进程的提交时间(Start);   tc
+​    t = tc - ts   ts:进程的提交时间(Start);   tc:进程的完成时间(Complete)     
+​    意义: t说明了进程在系统中停留的时间长短
+平均周转时间:
+t = (t1 +  t2 + t3…. + tn) / n
+
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -937,7 +951,14 @@
 并发性
 某一个进程同其他的进程共同向前推进
 
-异步
+异步性
+某一进程按照自身的速度向前推进
+
+独立性
+进程是系统分配资源的基本单位(cpu调度的基本单位是线程)
+
+
+进程同步机制信号灯机制基本概念进程在运行过程中受信号灯状态控制，并能改
           ...
           <!--noindex-->
           <div class="post-button text-center">

@@ -369,7 +369,19 @@ LGDT/LIDT: 装载特殊寄存器
 CLTS: 清除任务开关标志
 STI/CTI: 允许和禁止中断
 HALT: 停止CPU的工作
-IN/OU
+IN/OUT: 执行I/O操作
+从核态转为用户态
+
+
+
+态的分类
+核态(Kernel mode)
+
+能够访问所有的资源和执行所有的指令
+管理程序内核
+
+
+用户态(User mode, 目态)
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -518,7 +530,7 @@ IN/OU
         
           
           入门文章
-BIO的缺点 BIO就是阻塞I/O，在InputStream(读数据)或者OutputStream(写数据)时都有可能阻塞。阻塞后就会失去CPU的使用权，这种下不能承受大规模的访问。应对这种问题解决的方法可以是通过线程池运用多线程，当一个线程出现阻塞时其他线程还可以继续工作。但是当面对一些
+BIO的缺点 BIO就是阻塞I/O，在InputStream(读数据)或者OutputStream(写数据)时都有可能阻塞。阻塞后就会失去CPU的使用权，这种下不能承受大规模的访问。应对这种问题解决的方法可以是通过线程池运用多线程，当一个线程出现阻塞时其他线程还可以继续工作。但是当面对一些需要大量Http长连接的情况，服务端需要同时保持几百万的HTTP连接，如淘宝的”旺旺项目”，线程池不能同时保持几百万的线程或者无法升级某些用户的优先级，还有多线程竞争同一资源的同步
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -666,7 +678,7 @@ BIO的缺点 BIO就是阻塞I/O，在InputStream(读数据)或者OutputStream(�
       
         
           
-          一、UNIX中的I/O简述UNIX系统将所有的外部设备都看作文件，所有打开的文件都通过文件描述符来引用。UNIX的输入输出遵循Open-Read-Write-Close这套规范。当一个用户进程进行I/O操作之前，他需要调用(1)Open来指定并获取操作文件或设备读取或写入的权限。一旦I/O操作对象被
+          一、UNIX中的I/O简述UNIX系统将所有的外部设备都看作文件，所有打开的文件都通过文件描述符来引用。UNIX的输入输出遵循Open-Read-Write-Close这套规范。当一个用户进程进行I/O操作之前，他需要调用(1)Open来指定并获取操作文件或设备读取或写入的权限。一旦I/O操作对象被打开，那么这个用户进程就可以对该对象进行一次或多次的读、写操作。(2)Read操作从I/O操作设备读取数据，并将数据传递给用户。(2)Write操作将用户进程中的数据传写入到I/O
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -816,7 +828,9 @@ BIO的缺点 BIO就是阻塞I/O，在InputStream(读数据)或者OutputStream(�
           
           一、ThreadPoolExecutor的继承关系
 向上继承自AbstractExecutorService，向下被ScheduledThreadPoolExecutor继承
-工作线程的存放位置: private final HashSet&lt;Worker&gt; workers = new H
+工作线程的存放位置: private final HashSet&lt;Worker&gt; workers = new HashSet&lt;Worker&gt;();
+阻塞队列: private final BlockingQueue&lt;Runnable&gt; workQueue;
+二、重要的
           ...
           <!--noindex-->
           <div class="post-button text-center">
@@ -952,7 +966,14 @@ id值相同 执行的顺序为由上至下
 
 id值不同，则id值越大的越先被执行
 
-id值有的相同有的不同，这种情况下id值相同的从上向下进行，id不同的id值越大
+id值有的相同有的不同，这种情况下id值相同的从上向下进行，id不同的id值越大优先级越高
+
+
+
+select_type
+查询的类型，用于区分普通查询、联合查询、子查询等复杂查询。包括一下类型:
+
+SIMPLE: 简单的select查询，查询中不包含子查询或者
           ...
           <!--noindex-->
           <div class="post-button text-center">
