@@ -86,7 +86,7 @@
 <meta property="og:site_name" content="寻一">
 <meta property="og:description" content="Java反射与JDK的动态代理​        要深入了解Java的反射机制，就必须先弄清楚Java文件从编译到加载的过程。 一、JVM类加载​        简单的来说，所有的java文件在运行时要被编译成.class文件加载入JVM运行，.class文件也是java跨平台运行的基石。 ​        除了Java语言，其他例如Kotlin等语言编写的文件，都能被编译器编译成.class文件加">
 <meta property="article:published_time" content="2020-08-08T16:13:55.000Z">
-<meta property="article:modified_time" content="2020-08-08T16:14:48.711Z">
+<meta property="article:modified_time" content="2021-04-18T08:48:11.293Z">
 <meta property="article:author" content="寻一">
 <meta name="twitter:card" content="summary">
 
@@ -342,7 +342,7 @@
 <h4 id="一、JVM类加载"><a href="#一、JVM类加载" class="headerlink" title="一、JVM类加载"></a>一、JVM类加载</h4><p>​        简单的来说，所有的java文件在运行时要被编译成.class文件加载入JVM运行，.class文件也是java跨平台运行的基石。</p>
 <p>​        除了Java语言，其他例如Kotlin等语言编写的文件，都能被编译器编译成.class文件加载到虚拟机中运行。换句话说，JVM不关心.class文件的来源，只要.class文件的内容格式符合JVM标准，那么就可以被加载。</p>
 <h4 id="二、反射的基本原理"><a href="#二、反射的基本原理" class="headerlink" title="二、反射的基本原理"></a>二、反射的基本原理</h4><p>​        java中创建对象一般是➀通过new关键字，还可以➁通过反射创建对象：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*定义Person是一个接口, Man类是Person的一个实现*/</span></span><br><span class="line"><span class="comment">//想要创建Person对象可以有如下两种方式</span></span><br><span class="line">Person p = <span class="keyword">new</span> Person();<span class="comment">//传统方式通过new关键字创建</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*通过反射创建对象*/</span></span><br><span class="line"><span class="comment">/*其中通过反射获得字节码文件又有以下三种方式*/</span></span><br><span class="line">Class class0 = Class.forName(<span class="string">"Man的全路径名"</span>);<span class="comment">//1.通过类的全路径名称 就是包名加类名</span></span><br><span class="line">Class class1 = p.getClass();<span class="comment">//2.通过创建出的对象获得类的class对象</span></span><br><span class="line">Class class2 = Person.getClass();<span class="comment">//3.通过类名获取</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*得到Class对象后可以通过获得构造函数的方式活着直接newInstance()通过默认构造函数创建*/</span></span><br><span class="line"><span class="comment">//直接创建，其他创建方式另行了解</span></span><br><span class="line">Man man = (Person)p.newInstance();</span><br></pre></td></tr></table></figure>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*定义Person是一个接口, Man类是Person的一个实现*/</span></span><br><span class="line"><span class="comment">//想要创建Person对象可以有如下两种方式</span></span><br><span class="line">Person p = <span class="keyword">new</span> Person();<span class="comment">//传统方式通过new关键字创建</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*通过反射创建对象*/</span></span><br><span class="line"><span class="comment">/*其中通过反射获得字节码文件又有以下三种方式*/</span></span><br><span class="line">Class class0 = Class.forName(<span class="string">"Man的全路径名"</span>);<span class="comment">//1.通过类的全路径名称 就是包名加类名</span></span><br><span class="line">Class class1 = p.getClass();<span class="comment">//2.通过创建出的对象获得类的class对象</span></span><br><span class="line">Class class2 = Person.getClass();<span class="comment">//3.通过类名获取</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*得到Class对象后可以通过获得构造函数的方式或者直接newInstance()通过默认构造函数创建*/</span></span><br><span class="line"><span class="comment">//直接创建，其他创建方式另行了解</span></span><br><span class="line">Man man = (Person)p.newInstance();</span><br></pre></td></tr></table></figure>
 
 <p>​        两者的区别在于第二种方式实际上是第一种new方式的拆分，它把new关键字的步骤拆分为两步</p>
 <ol>
@@ -383,7 +383,7 @@
 
 <p>​        分析该文件，首先观察最后的<strong>static</strong>代码块，这是首先被加载的，观察第25行代码：<code>m3 = Class.forName(&quot;proxypattern.dynamicprocy.OrderTicketService&quot;).getMethod(&quot;orderService&quot;);</code>，通过<strong>反射</strong>，获取到了待执行目标方法并赋值给m3;</p>
 <p>​        再看在第8行的位置执行代码<code>super(var1)</code>，这里的var1参数就是我们自己编写的实现了<strong>InvocationHandler</strong>接口的对象，（回忆一下，我们编写的这个类的<code>invoke(Object proxy, Method method, Object[] args)</code>方法实际执行了目标方法），这里用了super，也就是说该参数传给了<strong>$Proxy0</strong>所继承的父类<strong>Proxy</strong>的一个相对应的构造方法，如下：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*首先定义了一个InvocationHandler对象的引用*/</span></span><br><span class="line"><span class="keyword">protected</span> InvocationHandler h;</span><br><span class="line"><span class="function"><span class="keyword">protected</span> <span class="title">Proxy</span><span class="params">(InvocationHandler h)</span> </span>&#123;</span><br><span class="line">    Objects.requireNonNull(h);</span><br><span class="line">    <span class="comment">//通过自类的构造方法为该引用赋值</span></span><br><span class="line">    <span class="keyword">this</span>.h = h;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*首先定义了一个InvocationHandler对象的引用*/</span></span><br><span class="line"><span class="keyword">protected</span> InvocationHandler h;</span><br><span class="line"><span class="function"><span class="keyword">protected</span> <span class="title">Proxy</span><span class="params">(InvocationHandler h)</span> </span>&#123;</span><br><span class="line">    Objects.requireNonNull(h);</span><br><span class="line">    <span class="comment">//通过子类的构造方法为该引用赋值</span></span><br><span class="line">    <span class="keyword">this</span>.h = h;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <p>​        最后看真正执行目标方法的代码第13行<code>super.h.invoke(this, m3, (Object[])null);</code>，通过<strong>父类Proxy</strong>持有的我们刚刚传入的自己编写实现Invocationhandler的对象，来执行其中的invoke方法，参数是当前对象this（实现了我们的目标接口OrderTicketService），m3—&gt;目标方法，以及其他参数。原代码如下：</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> Object <span class="title">invoke</span><span class="params">(Object proxy, Method method, Object[] args)</span> <span class="keyword">throws</span> Throwable </span>&#123;</span><br><span class="line">    System.out.println(<span class="string">"查询东方航空公司机票"</span>);</span><br><span class="line">    Object o = method.invoke(target, args);</span><br><span class="line">    System.out.println(<span class="string">"打印日志"</span>);</span><br><span class="line">    <span class="keyword">return</span> o;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
@@ -509,7 +509,7 @@
               
                 <a href="/archives/%7C%7C%20archive">
               
-                  <span class="site-state-item-count">16</span>
+                  <span class="site-state-item-count">18</span>
                   <span class="site-state-item-name">日志</span>
                 </a>
               </div>
@@ -584,7 +584,7 @@
 
     <footer id="footer" class="footer">
       <div class="footer-inner">
-        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2021</span>
   <span class="with-love">
     <i class="fa fa-user"></i>
   </span>
